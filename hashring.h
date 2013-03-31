@@ -27,6 +27,7 @@ struct hash_ring;
  * short keys, and @nreplicas should be fairly high (20-128 seems reasonable).
  */
 void	hash_ring_init(struct hash_ring *h, hasher_t hash, uint32_t nreplicas);
+void	hash_ring_clean(struct hash_ring *h);
 
 /*
  * Adds a member to hash_ring @h. @member should not already be included in

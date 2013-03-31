@@ -11,14 +11,18 @@
 
 #include <errno.h>
 #include <inttypes.h>
+#include <math.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <unistd.h>
 
 #include <check.h>
 #include <openssl/md5.h>
+#include <openssl/sha.h>
 
 #include "hashring.h"
+
+#include "MurmurHash3.h"
 
 /*
  * TODO RMSE tests to test some replica counts and common hash functions,
@@ -31,7 +35,7 @@
  * constant-sized keys. PRNG?
  */
 static uint32_t
-crappy_hasher(const void *data, size_t len)
+djb_hasher(const void *data, size_t len)
 {
 	uint32_t hash = 5381;
 	const uint8_t *d = data;
@@ -67,6 +71,36 @@ md5_hasher(const void *data, size_t len)
 	unsigned char md[MD5_DIGEST_LENGTH];
 
 	MD5(data, len, md);
+
+	return be32dec(md);
+}
+
+static uint32_t
+sha1_hasher(const void *data, size_t len)
+{
+	unsigned char md[SHA_DIGEST_LENGTH];
+
+	SHA1(data, len, md);
+
+	return be32dec(md);
+}
+
+static uint32_t
+mmh3_32_hasher(const void *data, size_t len)
+{
+	unsigned char md[4];
+
+	MurmurHash3_x86_32(data, len, 0x0/*seed*/, md);
+
+	return be32dec(md);
+}
+
+static uint32_t
+mmh3_128_hasher(const void *data, size_t len)
+{
+	unsigned char md[16];
+
+	MurmurHash3_x64_128(data, len, 0x0/*seed*/, md);
 
 	return be32dec(md);
 }
@@ -632,6 +666,95 @@ START_TEST(err_get_two_with_one_in_ring)
 }
 END_TEST
 
+#undef hasher
+
+const struct {
+	const char	*name;
+	hasher_t	 hash;
+} comparison_functions[] = {
+	{ "MD5", md5_hasher },
+	{ "DJB", djb_hasher },
+	{ "MH3_32", mmh3_32_hasher },
+	{ "MH3_128", mmh3_128_hasher },
+	{ "SHA1", sha1_hasher },
+};
+
+const uint32_t comparison_replicas[] = {
+	4,
+	8,
+	16,
+	32,
+	64,
+	128,
+	256,
+	512,
+};
+
+static void
+test_rmse(struct hash_ring *ring)
+{
+	uint64_t total_keyspace = (uint64_t)UINT32_MAX + 1,
+		 total_ring_items = ring->hr_ring_used;
+
+	int64_t exptd_item_keyspace = total_keyspace / total_ring_items;
+
+	uint64_t MSE = 0,
+		 last = -(total_keyspace - ring->hr_ring[ring->hr_ring_used-1].kv_hash);
+
+	for (size_t i = 0; i < ring->hr_ring_used; i++) {
+		uint64_t cur = ring->hr_ring[i].kv_hash,
+			 dist = cur - last;
+		int64_t err = exptd_item_keyspace - (int64_t)dist;
+
+		MSE += err*err;
+		last = cur;
+	}
+
+	double lRMSE = log(sqrt(MSE)) / log(2.);
+
+	printf("\t%d =\t%.02f\n", ring->hr_nreplicas, lRMSE);
+}
+
+START_TEST(distribution)
+{
+	uint32_t bins[3];
+	FILE *f;
+	struct hash_ring hr;
+
+	f = fopen("/dev/urandom", "rb");
+	for (unsigned i = 0; i < NELEM(bins); i++)
+		fread(&bins[i], 4, 1, f);
+	fclose(f);
+
+	printf("Key distribution error; lower is better.\n");
+	for (unsigned i = 0; i < NELEM(comparison_functions); i++) {
+		const char *hash_name;
+		hasher_t hash_fn;
+
+		hash_name = comparison_functions[i].name;
+		hash_fn = comparison_functions[i].hash;
+
+		printf("Evaluation hash '%s'\n", hash_name);
+
+		for (unsigned j = 0; j < NELEM(comparison_replicas); j++) {
+			uint32_t replicas;
+
+			replicas = comparison_replicas[j];
+
+			hash_ring_init(&hr, hash_fn, replicas);
+
+			hash_ring_add(&hr, bins[0]);
+			hash_ring_add(&hr, bins[1]);
+			hash_ring_add(&hr, bins[2]);
+
+			test_rmse(&hr);
+
+			hash_ring_clean(&hr);
+		}
+	}
+}
+END_TEST
+
 int
 main(void)
 {
@@ -672,6 +795,10 @@ main(void)
 
 	t = tcase_create("error_tests");
 	tcase_add_test(t, err_get_two_with_one_in_ring);
+	suite_add_tcase(s, t);
+
+	t = tcase_create("keyspace_distribution");
+	tcase_add_test(t, distribution);
 	suite_add_tcase(s, t);
 
 	SRunner *sr = srunner_create(s);

@@ -47,6 +47,14 @@ hash_ring_init(struct hash_ring *h, hasher_t hash, uint32_t nreplicas)
 }
 
 void
+hash_ring_clean(struct hash_ring *h)
+{
+	sx_destroy(&h->hr_lock);
+	free(h->hr_ring);
+	memset(h, 0, sizeof *h);
+}
+
+void
 hash_ring_add(struct hash_ring *h, uint32_t member)
 {
 	uint8_t hashdata[8];
