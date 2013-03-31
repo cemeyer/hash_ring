@@ -698,21 +698,28 @@ test_rmse(struct hash_ring *ring)
 
 	int64_t exptd_item_keyspace = total_keyspace / total_ring_items;
 
-	uint64_t MSE = 0,
-		 last = -(total_keyspace - ring->hr_ring[ring->hr_ring_used-1].kv_hash);
+	uint64_t last = -(total_keyspace - ring->hr_ring[ring->hr_ring_used-1].kv_hash);
+
+	double dMSE = 0.;
 
 	for (size_t i = 0; i < ring->hr_ring_used; i++) {
 		uint64_t cur = ring->hr_ring[i].kv_hash,
 			 dist = cur - last;
 		int64_t err = exptd_item_keyspace - (int64_t)dist;
 
-		MSE += err*err;
+		double derr = err * err;
+		derr /= total_keyspace;
+		derr /= total_keyspace;
+		dMSE += derr;
+
 		last = cur;
 	}
 
-	double lRMSE = log(sqrt(MSE)) / log(2.);
+	double RdMSE = sqrt(dMSE),
+	       lRdMSE = log(RdMSE)/log(2.);
 
-	printf("\t%d =\t%.02f\n", ring->hr_nreplicas, lRMSE);
+	printf("\t%d =\t%.01e\t(log: %.01f)\n", ring->hr_nreplicas, RdMSE,
+	    lRdMSE);
 }
 
 START_TEST(distribution)
