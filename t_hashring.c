@@ -25,11 +25,6 @@
 #include "MurmurHash3.h"
 
 /*
- * TODO RMSE tests to test some replica counts and common hash functions,
- * figure out what works well for us.
- */
-
-/*
  * This hash function is very far from adequate. This will need some
  * investigating. We need a function that gives good distribution for short,
  * constant-sized keys. PRNG?
@@ -131,6 +126,8 @@ START_TEST(basic_init)
 	struct hash_ring ring;
 
 	hash_ring_init(&ring, hasher, 5);
+
+	hash_ring_clean(&ring);
 }
 END_TEST
 
@@ -144,6 +141,7 @@ START_TEST(basic_additions)
 	hash_ring_add(&ring, 0xc0ffee);
 
 	fail_unless(ring.hr_count == 2);
+	hash_ring_clean(&ring);
 }
 END_TEST
 
@@ -167,6 +165,8 @@ START_TEST(basic_removes)
 
 	hash_ring_remove(&ring, 0x124dbeef);
 	fail_unless(ring.hr_count == 0);
+
+	hash_ring_clean(&ring);
 }
 END_TEST
 
@@ -213,6 +213,7 @@ START_TEST(example_plain)
 	 * 0x10076800 => 0x0000cccc
 	 * 0x77700000 => 0x0000bbbb
 	 */
+	hash_ring_clean(&ring);
 }
 END_TEST
 
@@ -269,6 +270,7 @@ START_TEST(example_adds)
 	 * 0x10076800 => 0x0000cccc
 	 * 0x77700000 => 0x0000eeee
 	 */
+	hash_ring_clean(&ring);
 }
 END_TEST
 
@@ -324,6 +326,7 @@ START_TEST(example_remove)
 	 * 0x10076800 => 0x0000aaaa
 	 * 0x77700000 => 0x0000bbbb
 	 */
+	hash_ring_clean(&ring);
 }
 END_TEST
 
@@ -359,6 +362,7 @@ START_TEST(func_add)
 	fail_if(ring.hr_ring == NULL);
 
 	ring_is_sorted(&ring);
+	hash_ring_clean(&ring);
 }
 END_TEST
 
@@ -372,6 +376,7 @@ START_TEST(func_remove)
 	hash_ring_remove(&ring, 0xABCDEF0);
 
 	fail_unless(ring.hr_ring_used == 0);
+	hash_ring_clean(&ring);
 }
 END_TEST
 
@@ -386,6 +391,7 @@ START_TEST(func_remove_nonexist)
 
 	fail_unless(ring.hr_ring_used == ring.hr_nreplicas);
 	fail_if(ring.hr_ring == NULL);
+	hash_ring_clean(&ring);
 }
 END_TEST
 
@@ -399,6 +405,7 @@ START_TEST(func_getempty)
 
 	err = hash_ring_getn(&ring, 0x1234, 1, &bin);
 	fail_unless(err == ENOENT);
+	hash_ring_clean(&ring);
 }
 END_TEST
 
@@ -440,6 +447,7 @@ START_TEST(func_getsingle)
 		fail_if(bin != the_bin, "0x%08x got invalid bin: 0x%08x",
 		    AN_INPUT, bin);
 	}
+	hash_ring_clean(&ring);
 }
 END_TEST
 
@@ -477,6 +485,7 @@ START_TEST(func_get_multiple)
 	err = hash_ring_getn(&ring, 0x12f9578, 1, &bin);
 	fail_if(err);
 	fail_if(bin != bin3, "#3 got bin: %08x", bin);
+	hash_ring_clean(&ring);
 }
 END_TEST
 
@@ -500,6 +509,7 @@ START_TEST(func_get_multiple_quick)
 		fail_if(err);
 		fail_unless(bin == bin1 || bin == bin2 || bin == bin3);
 	}
+	hash_ring_clean(&ring);
 }
 END_TEST
 
@@ -549,6 +559,7 @@ START_TEST(func_get_multiple_remove)
 	err = hash_ring_getn(&ring, 0x12f9578, 1, &bin);
 	fail_if(err);
 	fail_if(bin != bin3, "#6 got bin: %08x", bin);
+	hash_ring_clean(&ring);
 }
 END_TEST
 
@@ -576,6 +587,7 @@ START_TEST(func_get_multiple_remove_quick)
 
 		fail_unless(bin == bin1 || bin == bin2);
 	}
+	hash_ring_clean(&ring);
 }
 END_TEST
 
@@ -601,6 +613,7 @@ START_TEST(func_get_two)
 	/* only going to work for a particular hash function... */
 	fail_if(bins[0] != bin1, "1 0x%08x", bins[0]);
 	fail_if(bins[1] != bin2, "2 0x%08x", bins[1]);
+	hash_ring_clean(&ring);
 }
 END_TEST
 
@@ -626,6 +639,7 @@ START_TEST(func_get_two_quick)
 		fail_unless(bins[0] == bin1 || bins[0] == bin2 || bins[0] == bin3);
 		fail_unless(bins[1] == bin1 || bins[1] == bin2 || bins[1] == bin3);
 	}
+	hash_ring_clean(&ring);
 }
 END_TEST
 
@@ -649,6 +663,7 @@ START_TEST(func_get_two_quick2)
 		fail_unless(bins[0] == bin1 || bins[0] == bin2);
 		fail_unless(bins[1] == bin1 || bins[1] == bin2);
 	}
+	hash_ring_clean(&ring);
 }
 END_TEST
 
@@ -663,6 +678,7 @@ START_TEST(err_get_two_with_one_in_ring)
 
 	err = hash_ring_getn(&ring, 0x0, 2, &bin);
 	fail_unless(err == ENOENT);
+	hash_ring_clean(&ring);
 }
 END_TEST
 
