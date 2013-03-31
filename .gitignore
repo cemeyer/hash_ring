@@ -1,0 +1,4 @@
+TAGS
+.*.swp
+*.o
+run_tests
