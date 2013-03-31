@@ -4,8 +4,20 @@ hash\_ring
 Simple consistent hashing functionality in C; striving towards something
 suitable for kernel-space use.
 
-Derived heavily from StatHat's Golang implementation:
+Derived heavily from StatHat's Golang implementation, with a few variations:
 https://github.com/stathat/consistent
+
+The original Golang implementation keeps a ring of string nodes. When a client
+asks for appropriate node(s), it is given back those strings. This variation
+instead tracks `uint32_t` nodes. This choice lets callers use their own
+association between the 32-bit number space and whatever their nodes are (in
+our case, probably drive numbers rather than strings).
+
+Additionally, the original implementation's `Get()` family of functions took
+strings (keys) and hashed them itself; we leave this to the caller. This
+flexibility means callers are free to hash constant-sized structures, for
+example. It also means that our `hash_ring_getn()` implementation must trust
+the `hash` parameters to be uniformly distributed in the keyspace.
 
 Using
 -----
@@ -20,7 +32,61 @@ nicely as a library. Sorry.
 Examples
 --------
 
-See the tests -- t\_hashring.c.
+Using hash\_ring is pretty straightforward. Here is an example use case where
+the user is caching values to a set of disks, which are numbered uniquely in
+`uint32_t`. Disks may go down or come up. Stale reads will happen when some
+data is on one disk ('A'), a second disk ('B') is added, the data's key now
+associates to 'B', an overwrite happens and is written to 'B', and then 'B' is
+removed from the live set and the data's key associates back to 'A' again.
+
+```c
+struct hash_ring live_drive_set;
+
+hash_ring_init(&live_drive_set);
+
+/* Initially, drives 1-3 are all live */
+hash_ring_add(&live_drive_set, 0x01);
+hash_ring_add(&live_drive_set, 0x02);
+hash_ring_add(&live_drive_set, 0x03);
+
+/*
+ * ------------------------------------------------------------------------
+ * Incoming cache writes in other contexts look for which drive(s) to write
+ */
+uint32_t my_drives[2];
+int err;
+uint32_t my_key_hash = hash(key);
+
+err = hash_ring_getn(&live_drive_set, my_key_hash, 2, my_drives);
+if (err != 0) {
+    ...;
+}
+/* Write to drives my_drives[0] and my_drives[1] */
+
+/*
+ * -------------------------------------------------------------------
+ * Incoming cache reads in other contexts look for which drive to read
+ */
+uint32_t my_drive;
+
+err = hash_ring_getn(&live_drive_set, my_key_hash, 1, &my_drive);
+if (err != 0) { ...; }
+/* Read data from drive 'my_drive' */
+
+/*
+ * -------------------------------------------------------------------
+ * A drive, #2, fails
+ */
+hash_ring_remove(&live_drive_set, 0x2);
+
+/*
+ * -------------------------------------------------------------------
+ * A drive, #5, is added to the cache set
+ */
+hash_ring_add(&live_drive_set, 0x5);
+```
+
+Additionally, see the tests — t\_hashring.c.
 
 Key distribution
 ----------------
