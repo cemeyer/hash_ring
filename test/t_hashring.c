@@ -22,10 +22,7 @@
 
 #include "hashring.h"
 
-/* Not including proprietary isi_hash sources ... use MurmurHash3 instead. */
-#if 0
-# include "isi_hash.h"
-#endif
+#include "isi_hash.h"
 #include "MurmurHash3.h"
 
 /*
@@ -61,7 +58,6 @@ be32dec(const void *v)
 	return res;
 }
 
-#if 0
 static uint32_t
 isi_hasher64(const void *data, size_t len)
 {
@@ -77,7 +73,6 @@ isi_hasher32(const void *data, size_t len)
 
 	return isi_hash32(data, len, 0);
 }
-#endif
 
 /*
  * This is overkill...
@@ -715,10 +710,8 @@ const struct {
 	{ "SHA1", sha1_hasher },
 	{ "MH3_32", mmh3_32_hasher },
 	{ "MH3_128", mmh3_128_hasher },
-#if 0
 	{ "isi32", isi_hasher32 },
 	{ "isi64", isi_hasher64 },
-#endif
 };
 
 const uint32_t comparison_replicas[] = {
@@ -726,10 +719,12 @@ const uint32_t comparison_replicas[] = {
 	8,
 	16,
 	32,
+#if 0
 	64,
 	128,
 	256,
 	512,
+#endif
 };
 
 static void
