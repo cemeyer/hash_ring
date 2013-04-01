@@ -727,8 +727,10 @@ const uint32_t comparison_replicas[] = {
 #endif
 };
 
+#define NBUCKETS 3
+
 static void
-test_rmse(struct hash_ring *ring)
+test_rmse(struct hash_ring *ring, double *distr, uint32_t buckets[NBUCKETS])
 {
 	uint64_t total_keyspace = (uint64_t)UINT32_MAX + 1,
 		 total_ring_items = ring->hr_ring_used;
@@ -750,13 +752,23 @@ test_rmse(struct hash_ring *ring)
 		dMSE += derr;
 
 		last = cur;
+
+		for (unsigned b = 0; b < NBUCKETS; b++)
+			if (buckets[b] == ring->hr_ring[i].kv_value)
+				distr[b] += (double)dist;
 	}
+
+	for (unsigned b = 0; b < NBUCKETS; b++)
+		distr[b] /= (double)total_keyspace;
 
 	double RdMSE = sqrt(dMSE),
 	       lRdMSE = log(RdMSE)/log(2.);
 
+	printf("%.01e\t(log: %.01f)\t", RdMSE, lRdMSE);
+	/*
 	printf("\t%d =\t%.01e\t(log: %.01f)\n", ring->hr_nreplicas, RdMSE,
 	    lRdMSE);
+	    */
 }
 
 START_TEST(distribution)
@@ -764,13 +776,20 @@ START_TEST(distribution)
 	uint32_t bins[3];
 	FILE *f;
 	struct hash_ring hr;
+	double *dist;
 
 	f = fopen("/dev/urandom", "rb");
 	for (unsigned i = 0; i < NELEM(bins); i++)
 		fread(&bins[i], 4, 1, f);
 	fclose(f);
 
-	printf("Key distribution error; lower is better.\n");
+	dist = malloc(sizeof(double) * NELEM(bins) * NELEM(comparison_functions) * NELEM(comparison_replicas));
+
+	printf("Region size error; lower is better.\n");
+	printf("# replicas:\t");
+	for (unsigned j = 0; j < NELEM(comparison_replicas); j++)
+		printf("%"PRIu32"\t\t\t", comparison_replicas[j]);
+	printf("\n");
 	for (unsigned i = 0; i < NELEM(comparison_functions); i++) {
 		const char *hash_name;
 		hasher_t hash_fn;
@@ -778,7 +797,7 @@ START_TEST(distribution)
 		hash_name = comparison_functions[i].name;
 		hash_fn = comparison_functions[i].hash;
 
-		printf("Evaluation hash '%s'\n", hash_name);
+		printf("%s\t\t", hash_name);
 
 		for (unsigned j = 0; j < NELEM(comparison_replicas); j++) {
 			uint32_t replicas;
@@ -791,11 +810,45 @@ START_TEST(distribution)
 			hash_ring_add(&hr, bins[1]);
 			hash_ring_add(&hr, bins[2]);
 
-			test_rmse(&hr);
+			for (unsigned b = 0; b < NBUCKETS; b++)
+				dist[i * NELEM(bins) * NELEM(comparison_replicas) + j * NELEM(bins) + b] = 0.;
+
+			test_rmse(&hr, dist + i * NELEM(bins) * NELEM(comparison_replicas) + j * NELEM(bins), bins);
 
 			hash_ring_clean(&hr);
 		}
+
+		printf("\n");
 	}
+
+	printf("\n");
+	printf("Distribution error (lower is better):\n");
+	for (unsigned i = 0; i < NELEM(comparison_functions); i++) {
+		const char *hash_name;
+
+		hash_name = comparison_functions[i].name;
+
+		const double exptd = 1. / ((double)NBUCKETS);
+
+		printf("%s\t\t", hash_name);
+
+		for (unsigned j = 0; j < NELEM(comparison_replicas); j++) {
+			uint32_t replicas;
+
+			replicas = comparison_replicas[j];
+
+			double err[NBUCKETS];
+			for (unsigned b = 0; b < NBUCKETS; b++)
+				err[b] = dist[i*NBUCKETS*NELEM(comparison_replicas) + j*NBUCKETS + b] - exptd;
+
+			double Rmse = sqrt(err[0]*err[0] + err[1]*err[1] + err[2]*err[2]);
+			printf("%.02f\t\t\t", Rmse);
+		}
+
+		printf("\n");
+	}
+
+	free(dist);
 }
 END_TEST
 
