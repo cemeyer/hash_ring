@@ -1,10 +1,14 @@
-hashring.o: hashring.c hashring.h
-	gcc -g -Wall -Wextra -pthread -std=gnu99 -Os -c $<
+src/hashring.o: src/hashring.c include/hashring.h
+	make -C src hashring.o
 
-check: t_hashring.c hashring.o MurmurHash3.cpp
-	gcc -Wall -Wextra -pthread -std=gnu99 -Os $^ -lcheck \
-		-g \
-		-Wno-unused-function \
-		-lm -lcrypto \
-		-o run_tests
-	./run_tests
+test/t_hashring.o: test/t_hashring.c include/hashring.h
+	make -C test t_hashring.o
+
+dep/mh3/MurmurHash3.o: dep/mh3/MurmurHash3.cpp
+	make -C dep mh3/MurmurHash3.o
+
+test/run_tests: test/t_hashring.o dep/mh3/MurmurHash3.o src/hashring.o
+	make -C test run_tests
+
+check: test/run_tests
+	test/run_tests
