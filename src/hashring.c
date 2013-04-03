@@ -16,8 +16,6 @@
 
 #include "hashring.h"
 
-bool _debug = false;
-
 struct hr_kv_pair {
 	uint32_t	 kv_hash;
 	uint32_t	 kv_value;
@@ -85,8 +83,9 @@ hash_ring_add(struct hash_ring *h, uint32_t member)
 		le32enc(&hashdata[4], i);
 		rhash = h->hr_hash_fn(hashdata, sizeof hashdata);
 
-		if (_debug)
-			printf("insert rhash: %#x -> %#x\n", rhash, member);
+#ifdef HASH_RING_DEBUG
+		printf("insert rhash: %#x -> %#x\n", rhash, member);
+#endif
 
 		add_ring_item(h, rhash, member);
 	}
@@ -112,8 +111,9 @@ hash_ring_remove(struct hash_ring *h, uint32_t member)
 		le32enc(&hashdata[4], i);
 		rhash = h->hr_hash_fn(hashdata, sizeof hashdata);
 
-		if (_debug)
-			printf("remove rhash: %#x -> %#x\n", rhash, member);
+#ifdef HASH_RING_DEBUG
+		printf("remove rhash: %#x -> %#x\n", rhash, member);
+#endif
 
 		remove_ring_item(h, rhash, member);
 	}
@@ -257,8 +257,9 @@ add_ring_item(struct hash_ring *h, uint32_t hash, uint32_t member)
 	end = h->hr_ring + h->hr_ring_used;
 
 	if (insert != end && insert->kv_hash == hash) {
-		if (_debug)
-			printf("collision on %#x, skipping\n", hash);
+#ifdef HASH_RING_DEBUG
+		printf("collision on %#x, skipping\n", hash);
+#endif
 		return;
 	}
 
@@ -272,9 +273,10 @@ add_ring_item(struct hash_ring *h, uint32_t hash, uint32_t member)
 	*insert = newpair;
 	h->hr_ring_used++;
 
-	if (_debug)
-		printf("inserted { %#x, %#x } at idx %lu\n", hash, member,
-		    insert - h->hr_ring);
+#ifdef HASH_RING_DEBUG
+	printf("inserted { %#x, %#x } at idx %lu\n", hash, member,
+	    insert - h->hr_ring);
+#endif
 }
 
 static void
