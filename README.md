@@ -95,70 +95,24 @@ A desirable property of a hash function used for a consistent hash
 implementation is that the key space is evenly divided. I have attempted to
 measure that; here are my results:
 
-    Key distribution error; lower is better.
-    Evaluation hash 'DJB'
-        4 =     5.1e-01 (log: -1.0)
-        8 =     5.4e-01 (log: -0.9)
-        16 =    5.6e-01 (log: -0.8)
-        32 =    5.7e-01 (log: -0.8)
-        64 =    5.8e-01 (log: -0.8)
-        128 =   5.8e-01 (log: -0.8)
-        256 =   5.8e-01 (log: -0.8)
-        512 =   5.8e-01 (log: -0.8)
-    Evaluation hash 'MD5'
-        4 =     2.0e-01 (log: -2.3)
-        8 =     2.0e-01 (log: -2.3)
-        16 =    1.4e-01 (log: -2.8)
-        32 =    1.3e-01 (log: -3.0)
-        64 =    7.7e-02 (log: -3.7)
-        128 =   5.2e-02 (log: -4.3)
-        256 =   3.6e-02 (log: -4.8)
-        512 =   2.5e-02 (log: -5.3)
-    Evaluation hash 'SHA1'
-        4 =     1.5e-01 (log: -2.7)
-        8 =     1.8e-01 (log: -2.5)
-        16 =    1.3e-01 (log: -2.9)
-        32 =    9.5e-02 (log: -3.4)
-        64 =    7.1e-02 (log: -3.8)
-        128 =   5.0e-02 (log: -4.3)
-        256 =   3.7e-02 (log: -4.8)
-        512 =   2.7e-02 (log: -5.2)
-    Evaluation hash 'MH3_32'
-        4 =     2.3e-01 (log: -2.1)
-        8 =     1.8e-01 (log: -2.4)
-        16 =    1.4e-01 (log: -2.9)
-        32 =    9.2e-02 (log: -3.4)
-        64 =    7.5e-02 (log: -3.7)
-        128 =   5.0e-02 (log: -4.3)
-        256 =   3.6e-02 (log: -4.8)
-        512 =   2.6e-02 (log: -5.3)
-    Evaluation hash 'MH3_128'
-        4 =     2.6e-01 (log: -2.0)
-        8 =     1.9e-01 (log: -2.4)
-        16 =    1.5e-01 (log: -2.8)
-        32 =    1.1e-01 (log: -3.1)
-        64 =    7.7e-02 (log: -3.7)
-        128 =   5.1e-02 (log: -4.3)
-        256 =   3.6e-02 (log: -4.8)
-        512 =   2.6e-02 (log: -5.3)
-    Evaluation hash 'isi32'
-        4 =     2.8e-01 (log: -1.9)
-        8 =     2.2e-01 (log: -2.2)
-        16 =    1.2e-01 (log: -3.0)
-        32 =    1.0e-01 (log: -3.3)
-        64 =    8.2e-02 (log: -3.6)
-        128 =   5.1e-02 (log: -4.3)
-        256 =   3.5e-02 (log: -4.8)
-        512 =   2.5e-02 (log: -5.3)
-    Evaluation hash 'isi64'
-        4 =     1.8e-01 (log: -2.5)
-        8 =     1.2e-01 (log: -3.0)
-        16 =    1.2e-01 (log: -3.1)
-        32 =    1.1e-01 (log: -3.2)
-        64 =    7.9e-02 (log: -3.7)
-        128 =   5.5e-02 (log: -4.2)
-        256 =   3.7e-02 (log: -4.8)
-        512 =   2.6e-02 (log: -5.2)
+    Region size error; lower is better.
+    # replicas:     4                       8                       16                      32
+    DJB             6.0e-01 (log: -0.7)     6.3e-01 (log: -0.7)     6.5e-01 (log: -0.6)     6.6e-01 (log: -0.6)
+    MD5             3.0e-01 (log: -1.7)     2.0e-01 (log: -2.3)     1.5e-01 (log: -2.8)     1.0e-01 (log: -3.3)
+    SHA1            2.9e-01 (log: -1.8)     2.4e-01 (log: -2.1)     1.5e-01 (log: -2.7)     1.1e-01 (log: -3.2)
+    MH3_32          2.4e-01 (log: -2.0)     1.8e-01 (log: -2.5)     1.3e-01 (log: -3.0)     1.1e-01 (log: -3.2)
+    MH3_128         2.0e-01 (log: -2.3)     1.6e-01 (log: -2.6)     1.1e-01 (log: -3.1)     1.1e-01 (log: -3.2)
+    isi32           3.6e-01 (log: -1.5)     2.0e-01 (log: -2.3)     1.5e-01 (log: -2.8)     1.1e-01 (log: -3.2)
+    isi64           2.7e-01 (log: -1.9)     2.1e-01 (log: -2.2)     1.3e-01 (log: -3.0)     9.6e-02 (log: -3.4)
+    
+    Distribution error (lower is better):
+    DJB             0.33                    0.33                    0.33                    0.33
+    MD5             0.13                    0.15                    0.11                    0.07
+    SHA1            0.16                    0.11                    0.12                    0.10
+    MH3_32          0.27                    0.19                    0.08                    0.13
+    MH3_128         0.20                    0.25                    0.12                    0.09
+    isi32           0.31                    0.15                    0.22                    0.12
+    isi64           0.24                    0.09                    0.11                    0.04
 
 It appears that the DJB hash is fairly abysmal, but that stronger fast hashes
 like MurmurHash3 (32- and 128-bit variants) or isi_hash32 and isi_hash64

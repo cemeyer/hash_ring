@@ -24,11 +24,14 @@ struct hr_kv_pair {
 };
 
 /* Helpers ... */
-static int	hr_kv_cmp(const void *a, const void *b);
-static void	add_ring_item(struct hash_ring *, uint32_t hash,
-			      uint32_t member);
-static void	remove_ring_item(struct hash_ring *, uint32_t hash,
-				 uint32_t member);
+static int	 hr_kv_cmp(const void *a, const void *b);
+static void	 add_ring_item(struct hash_ring *, uint32_t hash,
+			       uint32_t member);
+static void	 remove_ring_item(struct hash_ring *, uint32_t hash,
+				  uint32_t member);
+static void	*bsearch_or_next(const void *key, const void *base,
+				 size_t nmemb, size_t size,
+				 int (*cmp)(const void *, const void *));
 
 /*
  * =========================================
@@ -65,12 +68,15 @@ hash_ring_add(struct hash_ring *h, uint32_t member)
 
 	sx_xlock(&h->hr_lock);
 
-	/*
-	 * TODO a kernel implementation will likely allocate memory unlocked
-	 * here:
-	while (h->hr_ring_capacity - h->hr_ring_used < h->hr_nreplicas)
-		realloc(h->hr_ring, ...);
-	*/
+	if (h->hr_ring_capacity - h->hr_ring_used < h->hr_nreplicas) {
+		size_t newsize;
+
+		h->hr_ring_capacity += h->hr_nreplicas;
+		newsize = h->hr_ring_capacity * sizeof(struct hr_kv_pair);
+
+		h->hr_ring = realloc(h->hr_ring, newsize);
+		assert(h->hr_ring != NULL);
+	}
 
 	le32enc(hashdata, member);
 	for (uint32_t i = 0; i < h->hr_nreplicas; i++) {
@@ -125,6 +131,7 @@ hash_ring_getn(struct hash_ring *h, uint32_t hash, unsigned n,
 {
 	int error = EINVAL;
 	uint32_t i, found;
+	struct hr_kv_pair *bucket, pairkey;
 
 	if (n == 0)
 		goto out;
@@ -141,12 +148,12 @@ hash_ring_getn(struct hash_ring *h, uint32_t hash, unsigned n,
 
 	/*
 	 * Find the smallest 'i' for which ring[i]->kv_hash > hash.
-	 * TODO: this can also be bsearch
-	 * */
-	for (i = 0; i < h->hr_ring_used; i++) {
-		if (h->hr_ring[i].kv_hash > hash)
-			break;
-	}
+	 */
+	pairkey.kv_hash = hash;
+
+	bucket = bsearch_or_next(&pairkey, h->hr_ring, h->hr_ring_used,
+	    sizeof pairkey, hr_kv_cmp);
+	i = bucket - h->hr_ring;
 
 	if (i == h->hr_ring_used)
 		i = 0;
@@ -186,6 +193,34 @@ out:
  */
 
 /*
+ * Bsearch, except returns a pointer to where the item would be inserted if
+ * missing, instead of NULL.
+ *
+ * Borrowed from FreeBSD libc/stdlib/bsearch.c (BSD licensed).
+ */
+static void *
+bsearch_or_next(const void *key, const void *base0, size_t nmemb, size_t size,
+    int (*compar)(const void *, const void *))
+{
+	const char *base = base0;
+	size_t lim;
+	int cmp;
+	const void *p;
+
+	for (lim = nmemb; lim != 0; lim >>= 1) {
+		p = base + (lim >> 1) * size;
+		cmp = (*compar)(key, p);
+		if (cmp == 0)
+			return (void *)p;
+		if (cmp > 0) {	/* key > p: move right */
+			base = (char *)p + size;
+			lim--;
+		}		/* else move left */
+	}
+	return (void*)base;
+}
+
+/*
  * Compares two hr_kv_pairs.
  */
 static int
@@ -210,43 +245,29 @@ add_ring_item(struct hash_ring *h, uint32_t hash, uint32_t member)
 
 	sx_assert(&h->hr_lock, SX_XLOCKED);
 
-	/*
-	 * TODO a kernel implementation will likely allocate memory earlier.
-	 */
-	if (h->hr_ring_capacity - h->hr_ring_used < 1) {
-		size_t newsize;
-
-		h->hr_ring_capacity += h->hr_nreplicas;
-		newsize = h->hr_ring_capacity * sizeof(struct hr_kv_pair);
-
-		h->hr_ring = realloc(h->hr_ring, newsize);
-		assert(h->hr_ring != NULL);
-	}
+	assert(h->hr_ring_capacity - h->hr_ring_used >= 1);
 	
 	newpair.kv_hash = hash;
 	newpair.kv_value = member;
 
-	/*
-	 * TODO: This could be a bsearch instead of a linear scan, but we need
-	 * a bsearch implementation that returns the nearest match.
-	 */
-	end = h->hr_ring + h->hr_ring_used;
-	for (insert = h->hr_ring; insert < end; insert++) {
-		int c = hr_kv_cmp(insert, &newpair);
+	/* Find the point at which this entry should be inserted */
+	insert = bsearch_or_next(&newpair, h->hr_ring, h->hr_ring_used,
+	    sizeof newpair, hr_kv_cmp);
 
-		if (c > 0)
-			break;
-		else if (c == 0) {
-			if (_debug)
-				printf("collision on %#x, skipping\n", hash);
-			return;
-		}
+	end = h->hr_ring + h->hr_ring_used;
+
+	if (insert != end && insert->kv_hash == hash) {
+		if (_debug)
+			printf("collision on %#x, skipping\n", hash);
+		return;
 	}
 
 	/* We insert in *front* of 'insert' */
 	if (insert != end)
-		memmove(insert + 1, insert,
-		    (end - insert) * sizeof(struct hr_kv_pair));
+		memmove(insert + 1, insert, (end - insert) * sizeof newpair);
+
+	assert(insert == h->hr_ring || (insert-1)->kv_hash < hash);
+	assert(insert == end || hash < (insert+1)->kv_hash);
 
 	*insert = newpair;
 	h->hr_ring_used++;

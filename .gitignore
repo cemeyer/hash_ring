@@ -2,4 +2,3 @@ TAGS
 .*.swp
 *.o
 run_tests
-isi_hash.*
