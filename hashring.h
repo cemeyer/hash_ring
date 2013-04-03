@@ -18,7 +18,7 @@
 #define LINUX_USERSPACE 1
 #include "sx_emu.h"
 
-typedef uint32_t (*hasher_t)(const void *, size_t);
+typedef uint32_t (*hr_hasher_t)(const void *, size_t);
 
 struct hash_ring;
 
@@ -26,7 +26,8 @@ struct hash_ring;
  * Initializes a hash_ring @h. @hash should be a good hashing function for
  * short keys, and @nreplicas should be fairly high (20-128 seems reasonable).
  */
-void	hash_ring_init(struct hash_ring *h, hasher_t hash, uint32_t nreplicas);
+void	hash_ring_init(struct hash_ring *h, hr_hasher_t hash,
+		       uint32_t nreplicas);
 void	hash_ring_clean(struct hash_ring *h);
 
 /*
@@ -57,25 +58,22 @@ int	hash_ring_getn(struct hash_ring *h, uint32_t hash, unsigned n,
 /*
  * Do not access any fields of hash_ring directly...
  */
-struct _kv_pair {
-	uint32_t	 kv_hash;
-	uint32_t	 kv_value;
-};
+struct hr_kv_pair;
 
 struct hash_ring {
-	struct sx	 hr_lock;
-	hasher_t	 hr_hash_fn;
+	struct sx		 hr_lock;
+	hr_hasher_t		 hr_hash_fn;
 
 	/* No. of members of this ring */
-	uint32_t	 hr_count;
+	uint32_t		 hr_count;
 
 	/* No. of replicas per member in map */
-	uint32_t	 hr_nreplicas;
+	uint32_t		 hr_nreplicas;
 
 	/* Sorted hash->value map */
-	struct _kv_pair	*hr_ring;
-	size_t		 hr_ring_used;
-	size_t		 hr_ring_capacity;
+	struct hr_kv_pair	*hr_ring;
+	size_t			 hr_ring_used;
+	size_t			 hr_ring_capacity;
 };
 
 #endif

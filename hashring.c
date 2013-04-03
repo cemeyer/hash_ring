@@ -18,13 +18,17 @@
 
 bool _debug = false;
 
+struct hr_kv_pair {
+	uint32_t	 kv_hash;
+	uint32_t	 kv_value;
+};
 
 /* Helpers ... */
-static int	_kv_cmp(const void *a, const void *b);
-static void	_add_ring_item(struct hash_ring *, uint32_t hash,
-		    uint32_t member);
-static void	_remove_ring_item(struct hash_ring *, uint32_t hash,
-		    uint32_t member);
+static int	hr_kv_cmp(const void *a, const void *b);
+static void	add_ring_item(struct hash_ring *, uint32_t hash,
+			      uint32_t member);
+static void	remove_ring_item(struct hash_ring *, uint32_t hash,
+				 uint32_t member);
 
 /*
  * =========================================
@@ -33,7 +37,7 @@ static void	_remove_ring_item(struct hash_ring *, uint32_t hash,
  */
 
 void
-hash_ring_init(struct hash_ring *h, hasher_t hash, uint32_t nreplicas)
+hash_ring_init(struct hash_ring *h, hr_hasher_t hash, uint32_t nreplicas)
 {
 
 	sx_init(&h->hr_lock, "hash ring lock");
@@ -78,7 +82,7 @@ hash_ring_add(struct hash_ring *h, uint32_t member)
 		if (_debug)
 			printf("insert rhash: %#x -> %#x\n", rhash, member);
 
-		_add_ring_item(h, rhash, member);
+		add_ring_item(h, rhash, member);
 	}
 
 	h->hr_count++;
@@ -105,7 +109,7 @@ hash_ring_remove(struct hash_ring *h, uint32_t member)
 		if (_debug)
 			printf("remove rhash: %#x -> %#x\n", rhash, member);
 
-		_remove_ring_item(h, rhash, member);
+		remove_ring_item(h, rhash, member);
 	}
 
 	/* TODO: possibly shrink h->hr_ring at this point if underfull */
@@ -182,12 +186,12 @@ out:
  */
 
 /*
- * Compares two _kv_pairs.
+ * Compares two hr_kv_pairs.
  */
 static int
-_kv_cmp(const void *a, const void *b)
+hr_kv_cmp(const void *a, const void *b)
 {
-	const struct _kv_pair *pa = a, *pb = b;
+	const struct hr_kv_pair *pa = a, *pb = b;
 
 	if (pa->kv_hash > pb->kv_hash)
 		return 1;
@@ -200,9 +204,9 @@ _kv_cmp(const void *a, const void *b)
  * Insert a new mapping into the ordered map internal to this hash_ring.
  */
 static void
-_add_ring_item(struct hash_ring *h, uint32_t hash, uint32_t member)
+add_ring_item(struct hash_ring *h, uint32_t hash, uint32_t member)
 {
-	struct _kv_pair *insert, *end, newpair;
+	struct hr_kv_pair *insert, *end, newpair;
 
 	sx_assert(&h->hr_lock, SX_XLOCKED);
 
@@ -213,7 +217,7 @@ _add_ring_item(struct hash_ring *h, uint32_t hash, uint32_t member)
 		size_t newsize;
 
 		h->hr_ring_capacity += h->hr_nreplicas;
-		newsize = h->hr_ring_capacity * sizeof(struct _kv_pair);
+		newsize = h->hr_ring_capacity * sizeof(struct hr_kv_pair);
 
 		h->hr_ring = realloc(h->hr_ring, newsize);
 		assert(h->hr_ring != NULL);
@@ -228,7 +232,7 @@ _add_ring_item(struct hash_ring *h, uint32_t hash, uint32_t member)
 	 */
 	end = h->hr_ring + h->hr_ring_used;
 	for (insert = h->hr_ring; insert < end; insert++) {
-		int c = _kv_cmp(insert, &newpair);
+		int c = hr_kv_cmp(insert, &newpair);
 
 		if (c > 0)
 			break;
@@ -242,7 +246,7 @@ _add_ring_item(struct hash_ring *h, uint32_t hash, uint32_t member)
 	/* We insert in *front* of 'insert' */
 	if (insert != end)
 		memmove(insert + 1, insert,
-		    (end - insert) * sizeof(struct _kv_pair));
+		    (end - insert) * sizeof(struct hr_kv_pair));
 
 	*insert = newpair;
 	h->hr_ring_used++;
@@ -253,9 +257,9 @@ _add_ring_item(struct hash_ring *h, uint32_t hash, uint32_t member)
 }
 
 static void
-_remove_ring_item(struct hash_ring *h, uint32_t hash, uint32_t member)
+remove_ring_item(struct hash_ring *h, uint32_t hash, uint32_t member)
 {
-	struct _kv_pair *remove, *end, rpair;
+	struct hr_kv_pair *remove, *end, rpair;
 
 	sx_assert(&h->hr_lock, SX_XLOCKED);
 
@@ -264,14 +268,14 @@ _remove_ring_item(struct hash_ring *h, uint32_t hash, uint32_t member)
 
 	end = h->hr_ring + h->hr_ring_used;
 	remove = bsearch(&rpair, h->hr_ring, h->hr_ring_used,
-	    sizeof(struct _kv_pair), _kv_cmp);
+	    sizeof(struct hr_kv_pair), hr_kv_cmp);
 
 	if (remove == NULL || remove->kv_value != member)
 		return;
 
 	if (remove + 1 != end)
 		memmove(remove, remove + 1,
-		    (end - remove - 1) * sizeof(struct _kv_pair));
+		    (end - remove - 1) * sizeof(struct hr_kv_pair));
 
 	h->hr_ring_used--;
 }

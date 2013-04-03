@@ -20,6 +20,10 @@
 #include <openssl/md5.h>
 #include <openssl/sha.h>
 
+struct hr_kv_pair {
+	uint32_t	kv_hash;
+	uint32_t	kv_value;
+};
 #include "hashring.h"
 
 /* Not including proprietary isi_hash sources ... use MurmurHash3 instead. */
@@ -708,7 +712,7 @@ END_TEST
 
 const struct {
 	const char	*name;
-	hasher_t	 hash;
+	hr_hasher_t	 hash;
 } comparison_functions[] = {
 	{ "DJB", djb_hasher },
 	{ "MD5", md5_hasher },
@@ -778,7 +782,7 @@ START_TEST(distribution)
 	printf("Key distribution error; lower is better.\n");
 	for (unsigned i = 0; i < NELEM(comparison_functions); i++) {
 		const char *hash_name;
-		hasher_t hash_fn;
+		hr_hasher_t hash_fn;
 
 		hash_name = comparison_functions[i].name;
 		hash_fn = comparison_functions[i].hash;
