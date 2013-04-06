@@ -1,5 +1,5 @@
-hash\_ring
-=========
+hash\_ring [![Build Status](https://travis-ci.org/cemeyer/hash_ring.png?branch=master)](https://travis-ci.org/cemeyer/hash\_ring)
+==============
 
 Simple consistent hashing functionality in C; striving towards something
 suitable for kernel-space use.
