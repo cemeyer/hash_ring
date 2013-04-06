@@ -2,4 +2,6 @@ language: c
 compiler:
   - clang
   - gcc
+before_install:
+  - sudo apt-get -y install check
 script: make check
