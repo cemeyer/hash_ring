@@ -1,5 +1,5 @@
 run_tests: t_hashring.o isi_hash.o ../src/hashring.o ../dep/mh3/MurmurHash3.o
-	$(CC) -g -pthread -Os $^ -lcheck -lm -lcrypto -o $@
+	$(CC) -g -pthread -Os $^ -lcheck -lm -lcrypto -lz -o $@
 
 t_hashring.o: t_hashring.c ../include/hashring.h
 	$(CC) -Wall -Wextra -pthread -std=gnu99 -Os -c $< \

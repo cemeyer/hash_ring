@@ -19,6 +19,7 @@
 #include <check.h>
 #include <openssl/md5.h>
 #include <openssl/sha.h>
+#include <zlib.h>
 
 struct hr_kv_pair {
 	uint32_t	kv_hash;
@@ -28,6 +29,7 @@ struct hr_kv_pair {
 
 #include "isi_hash.h"
 #include "MurmurHash3.h"
+#include "crc32c.h"
 
 /*
  * This hash function is very far from adequate. This will need some
@@ -119,6 +121,26 @@ mmh3_128_hasher(const void *data, size_t len)
 	MurmurHash3_x64_128(data, len, 0x0/*seed*/, md);
 
 	return be32dec(md);
+}
+
+static uint32_t
+crc32er(const void *data, size_t len)
+{
+	uint32_t crc = crc32(0L, Z_NULL, 0);
+
+	return crc32(crc, data, len);
+}
+
+static uint32_t
+crc32cer(const void *vdata, size_t len)
+{
+	const uint8_t *data = vdata;
+	uint32_t crc = ~(uint32_t)0;
+
+	for (size_t i = 0; i < len; i++)
+		CRC32C(crc, data[i]);
+
+	return __builtin_bswap32(crc);
 }
 
 static void
@@ -716,6 +738,8 @@ const struct {
 	{ "MH3_128", mmh3_128_hasher },
 	{ "isi32", isi_hasher32 },
 	{ "isi64", isi_hasher64 },
+	{ "crc32", crc32er },
+	{ "crc32c", crc32cer },
 };
 
 const uint32_t comparison_replicas[] = {
@@ -723,8 +747,8 @@ const uint32_t comparison_replicas[] = {
 	8,
 	16,
 	32,
-#if 0
 	64,
+#if 0
 	128,
 	256,
 	512,
@@ -837,9 +861,9 @@ START_TEST(distribution)
 		printf("%s\t\t", hash_name);
 
 		for (unsigned j = 0; j < NELEM(comparison_replicas); j++) {
-			uint32_t replicas;
+			//uint32_t replicas;
 
-			replicas = comparison_replicas[j];
+			//replicas = comparison_replicas[j];
 
 			double err[NBUCKETS];
 			for (unsigned b = 0; b < NBUCKETS; b++)
