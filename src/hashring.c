@@ -265,6 +265,9 @@ add_ring_item(struct hash_ring *h, uint32_t hash, uint32_t member)
 #ifdef HASH_RING_DEBUG
 		printf("collision on %#x, skipping\n", hash);
 #endif
+		/* Break ties by lower value */
+		if (member < insert->kv_value)
+			insert->kv_value = member;
 		return;
 	}
 

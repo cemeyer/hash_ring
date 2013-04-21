@@ -880,7 +880,7 @@ START_TEST(distribution)
 }
 END_TEST
 
-START_TEST(idempotent)
+START_TEST(err_idempotent)
 {
 	struct hash_ring ring;
 
@@ -900,6 +900,39 @@ START_TEST(idempotent)
 	/* removing the same item also works. */
 	hash_ring_remove(&ring, 0x12345678);
 	fail_unless(ring.hr_count == 0);
+
+	hash_ring_clean(&ring);
+}
+END_TEST
+
+/* Easy to collide, for test err_collisions_add below. */
+static uint32_t
+stupid_hash(const void *d, size_t len)
+{
+	const uint8_t *d8 = d;
+	uint32_t res = 0;
+
+	for (size_t i = 0; i < len; i++)
+		res += d8[i];
+
+	return res;
+}
+
+START_TEST(err_collisions_add)
+{
+	struct hash_ring ring;
+
+	hash_ring_init(&ring, stupid_hash, 64);
+
+	fail_unless(ring.hr_ring_used == 0);
+	hash_ring_add(&ring, 1);
+	fail_unless(ring.hr_ring_used == 64);
+
+	/*
+	 * 33-0 collides with 1-32, 33-1 with 1-33, etc, through 33-31 and 1-63
+	 */
+	hash_ring_add(&ring, 33);
+	fail_if(ring.hr_ring_used != 64+32);
 
 	hash_ring_clean(&ring);
 }
@@ -945,7 +978,8 @@ main(void)
 
 	t = tcase_create("error_tests");
 	tcase_add_test(t, err_get_two_with_one_in_ring);
-	tcase_add_test(t, idempotent);
+	tcase_add_test(t, err_idempotent);
+	tcase_add_test(t, err_collisions_add);
 	suite_add_tcase(s, t);
 
 	t = tcase_create("keyspace_distribution");
