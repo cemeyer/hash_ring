@@ -206,7 +206,7 @@ START_TEST(basic_removes)
 	hash_ring_remove(&ring, 0x124dbeef);
 	fail_unless(ring.hr_count == 1);
 
-	hash_ring_remove(&ring, 0x124dbeef);
+	hash_ring_remove(&ring, 0x0ff426ee);
 	fail_unless(ring.hr_count == 0);
 
 	hash_ring_clean(&ring);
@@ -880,6 +880,31 @@ START_TEST(distribution)
 }
 END_TEST
 
+START_TEST(idempotent)
+{
+	struct hash_ring ring;
+
+	hash_ring_init(&ring, isi_hasher64, 64);
+
+	fail_unless(ring.hr_count == 0);
+	hash_ring_add(&ring, 0x12345678);
+	fail_unless(ring.hr_count == 1);
+
+	/* adding the same item? don't count it */
+	hash_ring_add(&ring, 0x12345678);
+	fail_unless(ring.hr_count == 1);
+
+	hash_ring_remove(&ring, 0x12345678);
+	fail_unless(ring.hr_count == 0);
+
+	/* removing the same item also works. */
+	hash_ring_remove(&ring, 0x12345678);
+	fail_unless(ring.hr_count == 0);
+
+	hash_ring_clean(&ring);
+}
+END_TEST
+
 int
 main(void)
 {
@@ -920,6 +945,7 @@ main(void)
 
 	t = tcase_create("error_tests");
 	tcase_add_test(t, err_get_two_with_one_in_ring);
+	tcase_add_test(t, idempotent);
 	suite_add_tcase(s, t);
 
 	t = tcase_create("keyspace_distribution");

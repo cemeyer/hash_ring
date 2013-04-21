@@ -63,8 +63,11 @@ void
 hash_ring_add(struct hash_ring *h, uint32_t member)
 {
 	uint8_t hashdata[8];
+	size_t hr_used;
 
 	sx_xlock(&h->hr_lock);
+
+	hr_used = h->hr_ring_used;
 
 	if (h->hr_ring_capacity - h->hr_ring_used < h->hr_nreplicas) {
 		size_t newsize;
@@ -90,7 +93,8 @@ hash_ring_add(struct hash_ring *h, uint32_t member)
 		add_ring_item(h, rhash, member);
 	}
 
-	h->hr_count++;
+	if (hr_used != h->hr_ring_used)
+		h->hr_count++;
 
 	sx_unlock(&h->hr_lock);
 }
@@ -99,10 +103,11 @@ void
 hash_ring_remove(struct hash_ring *h, uint32_t member)
 {
 	uint8_t hashdata[8];
+	size_t hr_used;
 
 	sx_xlock(&h->hr_lock);
 
-	assert(h->hr_count > 0);
+	hr_used = h->hr_ring_used;
 
 	le32enc(hashdata, member);
 	for (uint32_t i = 0; i < h->hr_nreplicas; i++) {
@@ -119,8 +124,8 @@ hash_ring_remove(struct hash_ring *h, uint32_t member)
 	}
 
 	/* TODO: possibly shrink h->hr_ring at this point if underfull */
-
-	h->hr_count--;
+	if (hr_used != h->hr_ring_used)
+		h->hr_count--;
 
 	sx_unlock(&h->hr_lock);
 }
