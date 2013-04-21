@@ -30,6 +30,7 @@ static void	 remove_ring_item(struct hash_ring *, uint32_t hash,
 static void	*bsearch_or_next(const void *key, const void *base,
 				 size_t nmemb, size_t size,
 				 int (*cmp)(const void *, const void *));
+static void	 rehash(struct hash_ring *);
 
 /*
  * =========================================
@@ -124,8 +125,13 @@ hash_ring_remove(struct hash_ring *h, uint32_t member)
 	}
 
 	/* TODO: possibly shrink h->hr_ring at this point if underfull */
-	if (hr_used != h->hr_ring_used)
+	if (hr_used != h->hr_ring_used) {
 		h->hr_count--;
+
+		/* A collision and then removal happened. Re-hash everything */
+		if (h->hr_ring_used % h->hr_nreplicas != 0)
+			rehash(h);
+	}
 
 	sx_unlock(&h->hr_lock);
 }
@@ -309,4 +315,49 @@ remove_ring_item(struct hash_ring *h, uint32_t hash, uint32_t member)
 		    (end - remove - 1) * sizeof(struct hr_kv_pair));
 
 	h->hr_ring_used--;
+}
+
+static void
+rehash(struct hash_ring *h)
+{
+	uint8_t hashdata[8];
+	uint32_t *members_copy;
+	unsigned nmemb = 0,
+		 i, j;
+
+	members_copy = malloc(h->hr_count * sizeof *members_copy);
+
+	/* Extract all members... */
+	for (i = 0; i < h->hr_ring_used; i++) {
+		uint32_t m = h->hr_ring[i].kv_value;
+
+		for (j = 0; j < nmemb; j++)
+			if (members_copy[j] == m)
+				break;
+		if (j >= nmemb) {
+			assert(j < h->hr_count);
+			members_copy[j] = m;
+			nmemb++;
+		}
+		if (nmemb == h->hr_count)
+			break;
+	}
+
+	/* Re-add all hashes... hurray */
+	for (i = 0; i < nmemb; i++) {
+		le32enc(hashdata, members_copy[i]);
+		for (uint32_t r = 0; r < h->hr_nreplicas; r++) {
+			uint32_t rhash;
+
+			le32enc(&hashdata[4], r);
+			rhash = h->hr_hash_fn(hashdata, sizeof hashdata);
+			add_ring_item(h, rhash, members_copy[i]);
+		}
+	}
+
+	/* Something was completely hashed over? */
+	if (nmemb != h->hr_count)
+		h->hr_count = nmemb;
+
+	free(members_copy);
 }

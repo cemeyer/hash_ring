@@ -938,6 +938,26 @@ START_TEST(err_collisions_add)
 }
 END_TEST
 
+START_TEST(err_collisions_remove)
+{
+	struct hash_ring ring;
+
+	hash_ring_init(&ring, stupid_hash, 64);
+
+	fail_unless(ring.hr_ring_used == 0);
+	hash_ring_add(&ring, 1);
+	fail_unless(ring.hr_ring_used == 64);
+
+	hash_ring_add(&ring, 33);
+	fail_if(ring.hr_ring_used != 64+32);
+
+	hash_ring_remove(&ring, 1);
+	fail_if(ring.hr_ring_used != 64);
+
+	hash_ring_clean(&ring);
+}
+END_TEST
+
 int
 main(void)
 {
@@ -980,6 +1000,7 @@ main(void)
 	tcase_add_test(t, err_get_two_with_one_in_ring);
 	tcase_add_test(t, err_idempotent);
 	tcase_add_test(t, err_collisions_add);
+	tcase_add_test(t, err_collisions_remove);
 	suite_add_tcase(s, t);
 
 	t = tcase_create("keyspace_distribution");
