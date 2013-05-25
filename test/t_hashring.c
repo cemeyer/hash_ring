@@ -609,27 +609,36 @@ END_TEST
 #undef hasher
 
 const struct hash_compare comparison_functions[] = {
+#if 0
 	{ "DJB", djb_hasher, true },
 	{ "MD5", md5_hasher, false },
 	{ "SHA1", sha1_hasher, false },
 	{ "MH3_32", mmh3_32_hasher, true },
+#endif
 	{ "MH3_128", mmh3_128_hasher, true },
+#if 0
 	{ "isi32", isi_hasher32, true },
+#endif
 	{ "isi64", isi_hasher64, true },
+#if 0
 	{ "crc32", crc32er, true },
+#endif
 	{ "crc32c", crc32cer, true },
+	{ "siphash", siphasher, true },
 	{ 0 },
 };
 
 const uint32_t comparison_replicas[] = {
+#if 0
 	4,
 	8,
 	16,
 	32,
+#endif
 	64,
-#if 0
 	128,
 	256,
+#if 0
 	512,
 #endif
 };

@@ -30,5 +30,6 @@ uint32_t mmh3_32_hasher(const void *data, size_t len);
 uint32_t mmh3_128_hasher(const void *data, size_t len);
 uint32_t crc32er(const void *data, size_t len);
 uint32_t crc32cer(const void *vdata, size_t len);
+uint32_t siphasher(const void *d, size_t len);
 
 #endif

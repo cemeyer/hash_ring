@@ -1,10 +1,12 @@
 #include <float.h>
 #include <math.h>
+#include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 
 #include "t_bias.h"
+#include "siphash24.h"
 
 struct histogram {
 	uint64_t min,
@@ -252,17 +254,30 @@ crc32cer(const void *vdata, size_t len)
 	return __builtin_bswap32(crc);
 }
 
+uint32_t
+siphasher(const void *d, size_t len)
+{
+	const uint64_t k[2] = {
+		0xe276920babca796dULL,
+		0x443ef008123a77ceULL,
+	};
+	uint64_t sr;
+
+	sr = siphash24(d, len, k);
+	return (sr >> 32) ^ sr;
+}
+
 
 
 static struct hist_summary
-sample_hr(struct histogram *h, const struct hash_compare *hc)
+sample_hr(struct histogram *h, const struct hash_compare *hc, unsigned drives)
 {
 	struct hist_summary hs;
 	uint8_t val[8];
 	uint32_t i, j;
 	uint64_t res;
 
-	for (i = 0; i < 3; i++) {
+	for (i = 0; i < drives; i++) {
 		for (j = 0; j < 64; j++) {
 			le32enc(val, i);
 			le32enc(&val[4], j);
@@ -282,25 +297,33 @@ START_TEST(bias_ring)
 {
 	const struct hash_compare *hc, *bhc = NULL;
 	struct histogram *h;
-	const unsigned BUCKETS = 3*64;
 	const unsigned HISTHEIGHT = 79;
-	double besterr = DBL_MAX, err;
+	double besterr, err;
 	struct hist_summary hs;
+	unsigned buckets, dr;
 
-	for (hc = comparison_functions; hc->name != NULL; hc++) {
-		h = new_histogram(0, UINT32_MAX, BUCKETS, HISTHEIGHT);
+	for (dr = 1; dr < 8; dr++) {
+		besterr = DBL_MAX;
+		buckets = 64*dr;
 
-		hs = sample_hr(h, hc);
-		err = hs.rootssd;
-		if (err < besterr && hc->usable) {
-			besterr = err;
-			bhc = hc;
+		printf("# drives: %d\n", dr);
+
+		for (hc = comparison_functions; hc->name != NULL; hc++) {
+			h = new_histogram(0, UINT32_MAX, buckets, HISTHEIGHT);
+
+			hs = sample_hr(h, hc, dr);
+			err = hs.rootssd;
+			if (err < besterr && hc->usable) {
+				besterr = err;
+				bhc = hc;
+			}
+
+			free_histogram(h);
 		}
 
-		free_histogram(h);
+		printf("%d: Best root(sum err^2) = %s (%.02g)\n", dr,
+		    bhc->name, besterr);
 	}
-
-	printf("Best root(sum err^2) = %s (%.02g)\n", bhc->name, besterr);
 }
 END_TEST
 
