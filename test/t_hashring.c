@@ -16,132 +16,13 @@
 #include <stdio.h>
 #include <unistd.h>
 
-#include <check.h>
-#include <openssl/md5.h>
-#include <openssl/sha.h>
-#include <zlib.h>
-
 struct hr_kv_pair {
 	uint32_t	kv_hash;
 	uint32_t	kv_value;
 };
 #include "hashring.h"
 
-#include "isi_hash.h"
-#include "MurmurHash3.h"
-#include "crc32c.h"
-
-/*
- * This hash function is very far from adequate. This will need some
- * investigating. We need a function that gives good distribution for short,
- * constant-sized keys. PRNG?
- */
-static uint32_t
-djb_hasher(const void *data, size_t len)
-{
-	uint32_t hash = 5381;
-	const uint8_t *d = data;
-
-	for (; len > 0; len--) {
-		hash *= 33;
-		hash += *d;
-		d++;
-	}
-
-	return hash;
-}
-
-static uint32_t
-be32dec(const void *v)
-{
-	const uint8_t *d = v;
-	uint32_t res;
-
-	res = ((uint32_t)d[0] << 24) |
-	    ((uint32_t)d[1] << 16) |
-	    ((uint32_t)d[2] << 8) |
-	    (uint32_t)d[3];
-	return res;
-}
-
-static uint32_t
-isi_hasher64(const void *data, size_t len)
-{
-	uint64_t res;
-
-	res = isi_hash64(data, len, 0);
-	return (uint32_t)res;
-}
-
-static uint32_t
-isi_hasher32(const void *data, size_t len)
-{
-
-	return isi_hash32(data, len, 0);
-}
-
-/*
- * This is overkill...
- */
-static uint32_t
-md5_hasher(const void *data, size_t len)
-{
-	unsigned char md[MD5_DIGEST_LENGTH];
-
-	MD5(data, len, md);
-
-	return be32dec(md);
-}
-
-static uint32_t
-sha1_hasher(const void *data, size_t len)
-{
-	unsigned char md[SHA_DIGEST_LENGTH];
-
-	SHA1(data, len, md);
-
-	return be32dec(md);
-}
-
-static uint32_t
-mmh3_32_hasher(const void *data, size_t len)
-{
-	unsigned char md[4];
-
-	MurmurHash3_x86_32(data, len, 0x0/*seed*/, md);
-
-	return be32dec(md);
-}
-
-static uint32_t
-mmh3_128_hasher(const void *data, size_t len)
-{
-	unsigned char md[16];
-
-	MurmurHash3_x64_128(data, len, 0x0/*seed*/, md);
-
-	return be32dec(md);
-}
-
-static uint32_t
-crc32er(const void *data, size_t len)
-{
-	uint32_t crc = crc32(0L, Z_NULL, 0);
-
-	return crc32(crc, data, len);
-}
-
-static uint32_t
-crc32cer(const void *vdata, size_t len)
-{
-	const uint8_t *data = vdata;
-	uint32_t crc = ~(uint32_t)0;
-
-	for (size_t i = 0; i < len; i++)
-		CRC32C(crc, data[i]);
-
-	return __builtin_bswap32(crc);
-}
+#include "t_bias.h"
 
 static void
 _hash_ring_dump(struct hash_ring *h)
@@ -727,19 +608,17 @@ END_TEST
 
 #undef hasher
 
-const struct {
-	const char	*name;
-	hr_hasher_t	 hash;
-} comparison_functions[] = {
-	{ "DJB", djb_hasher },
-	{ "MD5", md5_hasher },
-	{ "SHA1", sha1_hasher },
-	{ "MH3_32", mmh3_32_hasher },
-	{ "MH3_128", mmh3_128_hasher },
-	{ "isi32", isi_hasher32 },
-	{ "isi64", isi_hasher64 },
-	{ "crc32", crc32er },
-	{ "crc32c", crc32cer },
+const struct hash_compare comparison_functions[] = {
+	{ "DJB", djb_hasher, true },
+	{ "MD5", md5_hasher, false },
+	{ "SHA1", sha1_hasher, false },
+	{ "MH3_32", mmh3_32_hasher, true },
+	{ "MH3_128", mmh3_128_hasher, true },
+	{ "isi32", isi_hasher32, true },
+	{ "isi64", isi_hasher64, true },
+	{ "crc32", crc32er, true },
+	{ "crc32c", crc32cer, true },
+	{ 0 },
 };
 
 const uint32_t comparison_replicas[] = {
@@ -818,7 +697,7 @@ START_TEST(distribution)
 	for (unsigned j = 0; j < NELEM(comparison_replicas); j++)
 		printf("%"PRIu32"\t\t\t", comparison_replicas[j]);
 	printf("\n");
-	for (unsigned i = 0; i < NELEM(comparison_functions); i++) {
+	for (unsigned i = 0; comparison_functions[i].name != NULL; i++) {
 		const char *hash_name;
 		hr_hasher_t hash_fn;
 
@@ -851,7 +730,7 @@ START_TEST(distribution)
 
 	printf("\n");
 	printf("Distribution error (lower is better):\n");
-	for (unsigned i = 0; i < NELEM(comparison_functions); i++) {
+	for (unsigned i = 0; comparison_functions[i].name != NULL; i++) {
 		const char *hash_name;
 
 		hash_name = comparison_functions[i].name;
@@ -1006,6 +885,8 @@ main(void)
 	t = tcase_create("keyspace_distribution");
 	tcase_add_test(t, distribution);
 	suite_add_tcase(s, t);
+
+	suite_add_t_bias(s);
 
 	SRunner *sr = srunner_create(s);
 	srunner_set_fork_status(sr, CK_NOFORK);
