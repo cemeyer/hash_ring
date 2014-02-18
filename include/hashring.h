@@ -4,47 +4,77 @@
  * This is available for use under the terms of the MIT license, see the
  * LICENSE file.
  *
- * This is derived from the MIT-licensed Go-language implementation,
- * 'consistent,' available here:
+ * Implementation of a consistent hashing instance, derived from the
+ * MIT-licensed Go-language implementation, 'consistent,' available here:
  *         https://github.com/stathat/consistent
+ *
+ * Note: Users are responsible for ensuring access is appropriately serialized.
+ * 'clean()', 'add()', and 'remove()' should be performed only with exclusive
+ * access. 'getn()' can be performed with shared locking (so long as the
+ * modifying calls are excluded).
  */
 
-#ifndef HASHRING_H
-#define HASHRING_H
+#ifndef _HASHRING_H_
+#define _HASHRING_H_
+
+#ifdef _KERNEL
+# ifndef __FreeBSD__
+#  error Unsupported kernel, figure out how to include stdint yourself
+# endif
+# include <sys/malloc.h>
+# include <sys/stdint.h>
+#else  /* !_KERNEL */
+# include <stdint.h>
+struct malloc_type;
+#endif
 
 #include <stdbool.h>
-#include <stdint.h>
 
-#define LINUX_USERSPACE 1
-#include "sx_emu.h"
+/*
+ * ===============================================================
+ * Public API
+ * ===============================================================
+ */
 
-typedef uint32_t (*hr_hasher_t)(const void *, size_t);
+typedef uint32_t	(*hr_hasher_t)(const void *, size_t);
 
 struct hash_ring;
 
 /*
  * Initializes a hash_ring @h. @hash should be a good hashing function for
- * short keys, and @nreplicas should be fairly high (20-128 seems reasonable).
+ * short keys, and @nreplicas should be fairly high (64 seems reasonable).
  */
 void	hash_ring_init(struct hash_ring *h, hr_hasher_t hash,
-		       uint32_t nreplicas);
+		       struct malloc_type *mt, uint32_t nreplicas);
+
+/* Cleans a hash_ring @h. */
 void	hash_ring_clean(struct hash_ring *h);
 
 /*
- * Adds a member to hash_ring @h. @member should not already be included in
- * this ring; this routine makes no attempt to validate that.
+ * Adds a member to hash_ring @h. Adds are idempotent, so adding an existing
+ * member is a no-op.
+ *
+ * Given a buf 'newmemb' (can be NULL) and size of buf sz (can be zero), adds
+ * member to h. If newmemb isn't big enough, fails and returns a size of buffer
+ * for caller to allocate. On success, returns zero.
  */
-void	hash_ring_add(struct hash_ring *h, uint32_t member);
+size_t	hash_ring_add(struct hash_ring *h, uint32_t member, void *newmemb,
+		      size_t sz);
 
 /*
- * Remove a member from the hash_ring @h. @member should be present in the
- * ring; this routine does not validate that.
+ * Remove a member from the hash_ring @h. Removes are idempotent, so removing a
+ * non-existent member is a no-op.
+ *
+ * Like add(), takes an auxiliary buf and returns a new size if this one isn't
+ * big enough. The passed buf is always freed. On success, returns zero.
  */
-void	hash_ring_remove(struct hash_ring *h, uint32_t member);
+size_t	hash_ring_remove(struct hash_ring *h, uint32_t member, void *aux,
+			 size_t sz);
 
 /*
  * Gets @n (1 or more) replicas from the hash_ring @h appropriate for key
- * @hash, putting them in the array @memb_out.
+ * @hash, putting them in the array @memb_out, which must be large enough for
+ * @n results.
  *
  * Returns zero on success or an error code on error.
  *
@@ -56,13 +86,37 @@ int	hash_ring_getn(struct hash_ring *h, uint32_t hash, unsigned n,
 		       uint32_t *memb_out);
 
 /*
- * Do not access any fields of hash_ring directly...
+ * Copies a hash_ring object.
+ *
+ * Does not clean dst first.
+ *
+ * Given a buf m (can be null) and size of buf (can be zero), copy src to dst.
+ * If m isn't big enough, returns new size for caller to allocate. On success,
+ * returns zero.
  */
-struct hr_kv_pair;
+size_t	hash_ring_copy(struct hash_ring *dst, struct hash_ring *src, void *m,
+		       size_t sz);
+
+/*
+ * ===============================================================
+ * Private! Do not access any of these directly.
+ * ===============================================================
+ */
+
+struct hr_kv_pair {
+	uint32_t	 kv_hash;
+	uint32_t	 kv_value;
+};
 
 struct hash_ring {
-	struct sx		 hr_lock;
 	hr_hasher_t		 hr_hash_fn;
+	struct malloc_type	*hr_mtype;
+
+	/* Sorted hash->value map */
+	struct hr_kv_pair	*hr_ring;
+	/* In units of struct hr_kv_pair: */
+	size_t			 hr_ring_used;
+	size_t			 hr_ring_capacity;
 
 	/* No. of members of this ring */
 	uint32_t		 hr_count;
@@ -70,10 +124,9 @@ struct hash_ring {
 	/* No. of replicas per member in map */
 	uint32_t		 hr_nreplicas;
 
-	/* Sorted hash->value map */
-	struct hr_kv_pair	*hr_ring;
-	size_t			 hr_ring_used;
-	size_t			 hr_ring_capacity;
+#ifdef INVARIANTS
+	bool			 hr_initialized;
+#endif
 };
 
-#endif
+#endif  /* _HASHRING_H_ */

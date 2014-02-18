@@ -1,8 +1,8 @@
 hash\_ring [![Build Status](https://travis-ci.org/cemeyer/hash_ring.png?branch=master)](https://travis-ci.org/cemeyer/hash\_ring)
 ==============
 
-Simple consistent hashing functionality in C; striving towards something
-suitable for kernel-space use.
+Simple consistent hashing functionality in C; suitable for kernel-space use
+(currently targetting FreeBSD).
 
 Derived heavily from StatHat's Golang implementation, with a few variations:
 https://github.com/stathat/consistent
@@ -40,6 +40,8 @@ associates to 'B', an overwrite happens and is written to 'B', and then 'B' is
 removed from the live set and the data's key associates back to 'A' again.
 
 ```c
+/* This example neglects memory allocation for simplicity */
+
 struct hash_ring live_drive_set;
 
 hash_ring_init(&live_drive_set);

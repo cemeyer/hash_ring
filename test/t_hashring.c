@@ -16,19 +16,17 @@
 #include <stdio.h>
 #include <unistd.h>
 
-struct hr_kv_pair {
-	uint32_t	kv_hash;
-	uint32_t	kv_value;
-};
 #include "hashring.h"
 
 #include "t_bias.h"
 
+#define hash_ring_init(r, h, n) hash_ring_init(r, h, NULL, n)
+#define hash_ring_add(r, m) hash_ring_add(r, m, malloc(8192), 8192)
+#define hash_ring_remove(r, m) hash_ring_remove(r, m, malloc(8192), 8192)
+
 static void
 _hash_ring_dump(struct hash_ring *h)
 {
-
-	sx_slock(&h->hr_lock);
 
 	printf("%p -> {\n", h);
 	printf("\thash_fn: %p\n", h->hr_hash_fn);
@@ -39,8 +37,6 @@ _hash_ring_dump(struct hash_ring *h)
 		printf("\t\t{ hash: %#"PRIx32", bin: %#"PRIx32" }\n",
 		    h->hr_ring[i].kv_hash, h->hr_ring[i].kv_value);
 	printf("\tring capacity: %zu\n", h->hr_ring_capacity);
-
-	sx_unlock(&h->hr_lock);
 }
 
 #define hasher md5_hasher
