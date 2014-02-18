@@ -21,8 +21,14 @@
 #include "t_bias.h"
 
 #define hash_ring_init(r, h, n) hash_ring_init(r, h, NULL, n)
-#define hash_ring_add(r, m) hash_ring_add(r, m, malloc(8192), 8192)
-#define hash_ring_remove(r, m) hash_ring_remove(r, m, malloc(8192), 8192)
+
+#define NBYTES (16*1024)
+
+#define hash_ring_add(r, m) \
+fail_if(hash_ring_add(r, m, malloc(NBYTES), NBYTES))
+
+#define hash_ring_remove(r, m) \
+fail_if(hash_ring_remove(r, m, malloc(NBYTES), NBYTES))
 
 static void
 _hash_ring_dump(struct hash_ring *h)
