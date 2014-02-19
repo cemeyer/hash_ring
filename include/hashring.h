@@ -23,7 +23,7 @@
 # endif
 # include <sys/malloc.h>
 # include <sys/stdint.h>
-#else  /* !_KERNEL */
+#else /* !_KERNEL */
 # include <stdint.h>
 struct malloc_type;
 #endif
