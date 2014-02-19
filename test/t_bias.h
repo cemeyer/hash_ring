@@ -13,6 +13,7 @@
 
 /* Add bias tests to check suite */
 void suite_add_t_bias(Suite *s);
+void suite_add_t_biased(Suite *s);
 
 extern const struct hash_compare {
 	const char	*name;

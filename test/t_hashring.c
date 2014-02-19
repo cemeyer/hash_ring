@@ -25,7 +25,7 @@
 #define NBYTES (16*1024)
 
 #define hash_ring_add(r, m) \
-fail_if(hash_ring_add(r, m, malloc(NBYTES), NBYTES))
+fail_if(hash_ring_add(r, m, 100/*weight*/, malloc(NBYTES), NBYTES))
 
 #define hash_ring_remove(r, m) \
 fail_if(hash_ring_remove(r, m, malloc(NBYTES), NBYTES))
@@ -898,9 +898,9 @@ main(void)
 	suite_add_tcase(s, t);
 
 	suite_add_t_bias(s);
+	suite_add_t_biased(s);
 
 	SRunner *sr = srunner_create(s);
-	srunner_set_fork_status(sr, CK_NOFORK);
 	srunner_run_all(sr, CK_VERBOSE);
 
 	nr_failed = srunner_ntests_failed(sr);

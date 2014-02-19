@@ -51,15 +51,17 @@ void	hash_ring_init(struct hash_ring *h, hr_hasher_t hash,
 void	hash_ring_clean(struct hash_ring *h);
 
 /*
- * Adds a member to hash_ring @h. Adds are idempotent, so adding an existing
- * member is a no-op.
+ * Adds a member to hash_ring @h, weight by @weightpct (1 to 100). Adds of the
+ * same member and weight are idempotent; additionally, increasing the weight
+ * of a member without first removing it should work. Decreasing weight
+ * requires removing the member first.
  *
  * Given a buf 'newmemb' (can be NULL) and size of buf sz (can be zero), adds
  * member to h. If newmemb isn't big enough, fails and returns a size of buffer
  * for caller to allocate. On success, returns zero.
  */
-size_t	hash_ring_add(struct hash_ring *h, uint32_t member, void *newmemb,
-		      size_t sz);
+size_t	hash_ring_add(struct hash_ring *h, uint32_t member, unsigned weightpct,
+		      void *newmemb, size_t sz);
 
 /*
  * Remove a member from the hash_ring @h. Removes are idempotent, so removing a

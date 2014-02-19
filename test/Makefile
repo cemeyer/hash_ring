@@ -1,7 +1,11 @@
-run_tests: t_hashring.o siphash24.o t_bias.o isi_hash.o ../src/hashring.o ../dep/mh3/MurmurHash3.o
+run_tests: t_hashring.o siphash24.o t_bias.o isi_hash.o ../src/hashring.o ../dep/mh3/MurmurHash3.o t_biased.o
 	$(CC) -g -pthread -Os $^ -lcheck -lm -lcrypto -lz -o $@
 
 t_hashring.o: t_hashring.c t_bias.h ../include/hashring.h
+	$(CC) -Wall -Wextra -pthread -std=gnu99 -Os -c $< \
+		-g -Wno-unused-function -I../include -I../dep/mh3
+
+t_biased.o: t_biased.c t_bias.h ../include/hashring.h
 	$(CC) -Wall -Wextra -pthread -std=gnu99 -Os -c $< \
 		-g -Wno-unused-function -I../include -I../dep/mh3
 

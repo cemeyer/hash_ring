@@ -46,8 +46,9 @@ le32enc(void *vp, uint32_t val)
 # endif  /* !__FreeBSD__ */
 
 # define __DECONST(type, var)	((type)(uintptr_t)(const void *)(var))
+# define ASSERT(expr)		assert(expr)
 # define ASSERT_DEBUG(expr)	assert(expr)
-# define free(p, tag) free(p)
+# define free(p, tag)		free(p)
 struct malloc_type;
 #endif  /* !_KERNEL */
 
@@ -104,14 +105,17 @@ hash_ring_clean(struct hash_ring *h)
 }
 
 size_t
-hash_ring_add(struct hash_ring *h, uint32_t member, void *newmemb, size_t sz)
+hash_ring_add(struct hash_ring *h, uint32_t member, unsigned weightpct,
+    void *newmemb, size_t sz)
 {
 	uint8_t hashdata[8];
+	uint32_t reps;
 	size_t hr_used, need;
 
 #ifdef INVARIANTS
 	ASSERT(h->hr_initialized);
 #endif
+	ASSERT(weightpct > 0 && weightpct <= 100);
 
 	need = (h->hr_ring_used + h->hr_nreplicas) * sizeof(h->hr_ring[0]);
 
@@ -136,7 +140,12 @@ hash_ring_add(struct hash_ring *h, uint32_t member, void *newmemb, size_t sz)
 	hr_used = h->hr_ring_used;
 
 	le32enc(hashdata, member);
-	for (uint32_t i = 0; i < h->hr_nreplicas; i++) {
+
+	reps = weightpct * h->hr_nreplicas / 100;
+	if (reps == 0)
+		reps = 1;
+
+	for (uint32_t i = 0; i < reps; i++) {
 		uint32_t rhash;
 
 		le32enc(&hashdata[4], i);
