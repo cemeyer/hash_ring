@@ -1,23 +1,28 @@
-src/hashring.o: src/hashring.c include/hashring.h
-	make -C src hashring.o
+CFLAGS?=-g -pipe -Wall -Wextra -Werror -Os
+CFLAGS+=-pthread -std=c99 -D_BSD_SOURCE
+CXXFLAGS?=-g -pipe -Wall -Wextra -Werror -Os
+CXXFLAGS+=-pthread -std=c++98
 
-test/t_hashring.o: test/t_hashring.c test/t_bias.h include/hashring.h
-	make -C test t_hashring.o
+all: hashring.o run_tests
 
-test/t_bias.o: test/t_bias.c include/hashring.h
-	make -C test t_bias.o
+hashring.o: hashring.c hashring.h
+	$(CC) $(CFLAGS) -c $<
 
-test/t_biased.o: test/t_biased.c include/hashring.h
-	make -C test t_biased.o
+T_DEPS = hashring.o MurmurHash3.o siphash24.o isi_hash.o
+T_OBJS = t_bias.o t_biased.o t_hashring.o $(T_DEPS)
+T_HDRS = t_bias.h siphash24.h hashring.h isi_hash.h MurmurHash3.h
 
-test/isi_hash.o: test/isi_hash.c test/isi_hash.h
-	make -C test isi_hash.o
+run_tests: $(T_OBJS) $(T_HDRS)
+	$(CC) $(CFLAGS) -o $@ $(T_OBJS) -lcheck -lm -lcrypto -lz
 
-dep/mh3/MurmurHash3.o: dep/mh3/MurmurHash3.cpp
-	make -C dep mh3/MurmurHash3.o
+%.o: %.c t_bias.h hashring.h siphash24.h isi_hash.h
+	$(CC) $(CFLAGS) -c $<
 
-test/run_tests: test/t_bias.o test/t_hashring.o dep/mh3/MurmurHash3.o src/hashring.o test/isi_hash.o test/t_biased.o
-	make -C test run_tests
+%.o: %.cpp MurmurHash3.h
+	$(CXX) $(CXXFLAGS) -c $<
 
-check: test/run_tests
-	test/run_tests
+check: run_tests
+	./run_tests
+
+clean:
+	rm -f $(T_OBJS)

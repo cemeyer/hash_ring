@@ -1,19 +1,17 @@
 #ifdef __FreeBSD__
 # include <sys/endian.h>
 #else
-# include <endian.h>
 # include <stdint.h>
 
 static inline void
 le32enc(void *vp, uint32_t val)
 {
 	uint8_t *bp = vp;
-	uint32_t leval = htole32(val);
 
-	bp[0] = leval & 0xff;
-	bp[1] = (leval >> 8) & 0xff;
-	bp[2] = (leval >> 16) & 0xff;
-	bp[3] = leval >> 24;
+	bp[0] = val & 0xff;
+	bp[1] = (val >> 8) & 0xff;
+	bp[2] = (val >> 16) & 0xff;
+	bp[3] = val >> 24;
 }
 #endif  /* !__FreeBSD__ */
 
