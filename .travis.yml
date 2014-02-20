@@ -4,4 +4,4 @@ compiler:
   - gcc
 before_install:
   - sudo apt-get -y install check
-script: make check
+script: make check CFLAGS="-g -pipe -Os" CXXFLAGS="-g -pipe -Os"
