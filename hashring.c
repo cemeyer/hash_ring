@@ -17,7 +17,7 @@
 # include <sys/errno.h>
 # include <sys/libkern.h>
 # include <sys/malloc.h>
-#else  /* !_KERNEL */
+#else /* !_KERNEL */
 # ifdef __FreeBSD__
 #  include <sys/endian.h>
 # endif
@@ -40,14 +40,14 @@ le32enc(void *vp, uint32_t val)
 	bp[2] = (val >> 16) & 0xff;
 	bp[3] = val >> 24;
 }
-# endif  /* !__FreeBSD__ */
+# endif /* !__FreeBSD__ */
 
 # define __DECONST(type, var)	((type)(uintptr_t)(const void *)(var))
 # define ASSERT(expr)		assert(expr)
 # define ASSERT_DEBUG(expr)	assert(expr)
 # define free(p, tag)		free(p)
 struct malloc_type;
-#endif  /* !_KERNEL */
+#endif /* _KERNEL */
 
 #include "hashring.h"
 
