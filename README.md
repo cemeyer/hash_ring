@@ -9,8 +9,8 @@ https://github.com/stathat/consistent
 
 The original Golang implementation keeps a ring of string nodes. When a client
 asks for appropriate node(s), it is given back those strings. This variation
-instead tracks `uint32_t` nodes. This choice lets callers use their own
-association between the 32-bit number space and whatever their nodes are (in
+instead tracks 24-bit node ids. This choice lets callers use their own
+association between the 24-bit number space and whatever their nodes are (in
 our case, probably drive numbers rather than strings).
 
 Additionally, the original implementation's `Get()` family of functions took
@@ -34,7 +34,7 @@ Examples
 
 Using hash\_ring is pretty straightforward. Here is an example use case where
 the user is caching values to a set of disks, which are numbered uniquely in
-`uint32_t`. Disks may go down or come up. Stale reads will happen when some
+integers. Disks may go down or come up. Stale reads will happen when some
 data is on one disk ('A'), a second disk ('B') is added, the data's key now
 associates to 'B', an overwrite happens and is written to 'B', and then 'B' is
 removed from the live set and the data's key associates back to 'A' again.

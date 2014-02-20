@@ -51,6 +51,16 @@ struct malloc_type;
 
 #include "hashring.h"
 
+/* Extract weight, value from combined field in hr_kv_pair */
+#define HR_VAL_BITS		24
+#define HR_VAL_MASK		((1U << HR_VAL_BITS) - 1)
+#define HR_VAL(u32val)		((u32val) & HR_VAL_MASK)
+#define HR_WEIGHT(u32val)	((u32val) >> HR_VAL_BITS)
+
+/* Combine weight and 24-bit value into combined kv_value */
+#define HR_MK_VAL(u32wt, u32member) \
+	(((u32wt) << HR_VAL_BITS) | HR_VAL(u32member))
+
 static void	*bsearch_or_next(const void *key, const void *base,
 				 size_t nmemb, size_t size,
 				 int (*cmp)(const void *, const void *));
@@ -62,6 +72,7 @@ static void	 remove_ring_item(struct hash_ring *, uint32_t hash,
 				  uint32_t member);
 
 static void	 rehash(struct hash_ring *, uint32_t *memb);
+static void	 ring_fixup_weights(struct hash_ring*, uint32_t mempair);
 
 /*
  * =========================================
@@ -77,7 +88,6 @@ hash_ring_init(struct hash_ring *h, hr_hasher_t hash, struct malloc_type *mt,
 	h->hr_hash_fn = hash;
 	h->hr_mtype = mt;
 	h->hr_nreplicas = nreplicas;
-	h->hr_count = 0;
 
 	h->hr_ring = NULL;
 	h->hr_ring_used = 0;
@@ -107,12 +117,13 @@ hash_ring_add(struct hash_ring *h, uint32_t member, unsigned weightpct,
 {
 	uint8_t hashdata[8];
 	uint32_t reps;
-	size_t hr_used, need;
+	size_t need;
 
 #ifdef INVARIANTS
 	ASSERT(h->hr_initialized);
 #endif
 	ASSERT(weightpct > 0 && weightpct <= 100);
+	ASSERT(HR_WEIGHT(member) == 0);
 
 	need = (h->hr_ring_used + h->hr_nreplicas) * sizeof(h->hr_ring[0]);
 
@@ -134,8 +145,6 @@ hash_ring_add(struct hash_ring *h, uint32_t member, unsigned weightpct,
 		return need;
 	}
 
-	hr_used = h->hr_ring_used;
-
 	le32enc(hashdata, member);
 
 	reps = weightpct * h->hr_nreplicas / 100;
@@ -151,8 +160,7 @@ hash_ring_add(struct hash_ring *h, uint32_t member, unsigned weightpct,
 		add_ring_item(h, rhash, member);
 	}
 
-	if (hr_used != h->hr_ring_used)
-		h->hr_count++;
+	ring_fixup_weights(h, HR_MK_VAL(weightpct, member));
 
 	return 0;
 }
@@ -163,15 +171,19 @@ hash_ring_add(struct hash_ring *h, uint32_t member, unsigned weightpct,
  * aux is always freed.
  */
 size_t
-hash_ring_remove(struct hash_ring *h, uint32_t member, void *aux, size_t auxsz)
+hash_ring_remove(struct hash_ring *h, uint32_t member, unsigned weightpct,
+    void *aux, size_t auxsz)
 {
 	uint8_t hashdata[8];
 	size_t hr_used,
 	       memb_exp;
+	uint32_t reps, i;
 
 #ifdef INVARIANTS
 	ASSERT(h->hr_initialized);
 #endif
+	ASSERT(weightpct < 100);
+	ASSERT(HR_WEIGHT(member) == 0);
 
 	memb_exp = 0;
 	if (h->hr_nreplicas > 0)
@@ -187,7 +199,12 @@ hash_ring_remove(struct hash_ring *h, uint32_t member, void *aux, size_t auxsz)
 	hr_used = h->hr_ring_used;
 
 	le32enc(hashdata, member);
-	for (uint32_t i = 0; i < h->hr_nreplicas; i++) {
+
+	reps = weightpct * h->hr_nreplicas / 100;
+	if (reps == 0 && weightpct > 0)
+		reps = 1;
+
+	for (i = h->hr_nreplicas - 1; i >= reps && i < UINT32_MAX; i--) {
 		uint32_t rhash;
 
 		le32enc(&hashdata[4], i);
@@ -196,15 +213,12 @@ hash_ring_remove(struct hash_ring *h, uint32_t member, void *aux, size_t auxsz)
 		remove_ring_item(h, rhash, member);
 	}
 
+	ring_fixup_weights(h, HR_MK_VAL(weightpct, member));
+
 	/* TODO: possibly shrink h->hr_ring at this point if underfull */
 
-	if (hr_used != h->hr_ring_used) {
-		h->hr_count--;
-
-		/* A collision and then removal happened? Re-hash everything */
-		if (h->hr_ring_used % h->hr_nreplicas != 0)
-			rehash(h, aux);
-	}
+	if (hr_used != h->hr_ring_used)
+		rehash(h, aux);
 
 	if (aux != NULL)
 		free(aux, h->hr_mtype);
@@ -217,7 +231,7 @@ hash_ring_getn(struct hash_ring *h, uint32_t hash, unsigned n,
     uint32_t *memb_out)
 {
 	int error = EINVAL;
-	uint32_t i, found;
+	uint32_t i, found, walked;
 	struct hr_kv_pair *bucket, pairkey;
 
 #ifdef INVARIANTS
@@ -226,11 +240,6 @@ hash_ring_getn(struct hash_ring *h, uint32_t hash, unsigned n,
 
 	if (n == 0)
 		goto out;
-
-	if (h->hr_count < n) {
-		error = ENOENT;
-		goto out;
-	}
 
 	error = 0;
 
@@ -250,11 +259,28 @@ hash_ring_getn(struct hash_ring *h, uint32_t hash, unsigned n,
 	 * We start with hr_ring[i], walking until we find enough distinct
 	 * items
 	 */
+	walked = 0;
 	for (found = 0; n > found; i = (i + 1) % h->hr_ring_used) {
 		bool already_found = false;
 
+		/*
+		 * Since we no longer have a reliable hash member count, error
+		 * out if we walk the whole ring and don't have enough members
+		 * to satisfy the request.
+		 *
+		 * Since this may be expensive (O(N) instead of amortized
+		 * O(1)), callers are advised to only call getn() with N <= the
+		 * number of members they have inserted. This is often easy for
+		 * the user to track.
+		 */
+		if (walked >= h->hr_ring_used) {
+			error = ENOENT;
+			goto out;
+		}
+		walked++;
+
 		for (unsigned j = 0; j < found; j++) {
-			if (memb_out[j] == h->hr_ring[i].kv_value) {
+			if (memb_out[j] == HR_VAL(h->hr_ring[i].kv_value)) {
 				already_found = true;
 				break;
 			}
@@ -263,7 +289,7 @@ hash_ring_getn(struct hash_ring *h, uint32_t hash, unsigned n,
 		if (already_found)
 			continue;
 
-		memb_out[found] = h->hr_ring[i].kv_value;
+		memb_out[found] = HR_VAL(h->hr_ring[i].kv_value);
 		found++;
 	}
 
@@ -363,9 +389,10 @@ hr_kv_cmp(const void *a, const void *b)
  * Insert a new mapping into the ordered map internal to this hash_ring.
  */
 static void
-add_ring_item(struct hash_ring *h, uint32_t hash, uint32_t member)
+add_ring_item(struct hash_ring *h, uint32_t hash, uint32_t member_)
 {
 	struct hr_kv_pair *insert, *end, newpair;
+	uint32_t member = HR_VAL(member_);
 
 	ASSERT_DEBUG(h->hr_ring_capacity - h->hr_ring_used >= 1);
 	
@@ -380,8 +407,8 @@ add_ring_item(struct hash_ring *h, uint32_t hash, uint32_t member)
 
 	if (insert != end && insert->kv_hash == hash) {
 		/* Collision on 'hash', lowest value wins */
-		if (member < insert->kv_value)
-			insert->kv_value = member;
+		if (member < HR_VAL(insert->kv_value))
+			insert->kv_value = member_;
 		return;
 	}
 
@@ -397,9 +424,10 @@ add_ring_item(struct hash_ring *h, uint32_t hash, uint32_t member)
 }
 
 static void
-remove_ring_item(struct hash_ring *h, uint32_t hash, uint32_t member)
+remove_ring_item(struct hash_ring *h, uint32_t hash, uint32_t member_)
 {
 	struct hr_kv_pair *remove, *end, rpair;
+	uint32_t member = HR_VAL(member_);
 
 	rpair.kv_hash = hash;
 	rpair.kv_value = member;
@@ -408,7 +436,7 @@ remove_ring_item(struct hash_ring *h, uint32_t hash, uint32_t member)
 	remove = bsearch(&rpair, h->hr_ring, h->hr_ring_used,
 	    sizeof(struct hr_kv_pair), hr_kv_cmp);
 
-	if (remove == NULL || remove->kv_value != member)
+	if (remove == NULL || HR_VAL(remove->kv_value) != member)
 		return;
 
 	if (remove + 1 != end)
@@ -424,6 +452,7 @@ rehash(struct hash_ring *h, uint32_t *memb)
 	uint8_t hashdata[8];
 	unsigned nmemb = 0,
 		 i, j;
+	uint32_t reps;
 
 	/* Extract all members... */
 	for (i = 0; i < h->hr_ring_used; i++) {
@@ -433,18 +462,23 @@ rehash(struct hash_ring *h, uint32_t *memb)
 			if (memb[j] == m)
 				break;
 		if (j >= nmemb) {
-			ASSERT_DEBUG(j < h->hr_count);
 			memb[j] = m;
 			nmemb++;
 		}
-		if (nmemb == h->hr_count)
-			break;
 	}
 
 	/* Re-add all hashes... hurray */
 	for (i = 0; i < nmemb; i++) {
-		le32enc(hashdata, memb[i]);
-		for (uint32_t r = 0; r < h->hr_nreplicas; r++) {
+		unsigned weightpct;
+
+		le32enc(hashdata, HR_VAL(memb[i]));
+		weightpct = HR_WEIGHT(memb[i]);
+
+		reps = weightpct * h->hr_nreplicas / 100;
+		if (reps == 0)
+			reps = 1;
+
+		for (uint32_t r = 0; r < reps; r++) {
 			uint32_t rhash;
 
 			le32enc(&hashdata[4], r);
@@ -452,8 +486,16 @@ rehash(struct hash_ring *h, uint32_t *memb)
 			add_ring_item(h, rhash, memb[i]);
 		}
 	}
+}
 
-	/* Something was completely hashed over? */
-	if (nmemb < h->hr_count)
-		h->hr_count = nmemb;
+static void
+ring_fixup_weights(struct hash_ring *h, uint32_t mempair)
+{
+	struct hr_kv_pair *it, *end;
+	uint32_t member = HR_VAL(mempair);
+
+	end = &h->hr_ring[h->hr_ring_used];
+	for (it = h->hr_ring; it < end; it++)
+		if (HR_VAL(it->kv_value) == member)
+			it->kv_value = mempair;
 }

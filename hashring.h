@@ -51,27 +51,30 @@ void	hash_ring_init(struct hash_ring *h, hr_hasher_t hash,
 void	hash_ring_clean(struct hash_ring *h);
 
 /*
- * Adds a member to hash_ring @h, weight by @weightpct (1 to 100). Adds of the
- * same member and weight are idempotent; additionally, increasing the weight
- * of a member without first removing it should work. Decreasing weight
- * requires removing the member first.
+ * Increases the @weightpct (1-100) of @member in @h (potentially from zero,
+ * i.e., not present). If member's weight is greater than @weightpct, does
+ * nothing. A non-zero @weightpct will always round up to at least one entry in
+ * the ring.
  *
- * Given a buf 'newmemb' (can be NULL) and size of buf sz (can be zero), adds
- * member to h. If newmemb isn't big enough, fails and returns a size of buffer
- * for caller to allocate. On success, returns zero.
+ * If newmemb isn't big enough, fails and returns a size of buffer for caller
+ * to allocate. On success, returns zero.
+ *
+ * Only the low 24 bits of member are usable.
  */
 size_t	hash_ring_add(struct hash_ring *h, uint32_t member, unsigned weightpct,
 		      void *newmemb, size_t sz);
 
 /*
- * Remove a member from the hash_ring @h. Removes are idempotent, so removing a
- * non-existent member is a no-op.
+ * Decreases the @weightpct (0-99) of @member in @h (potentially to zero, i.e.,
+ * full removal). If the member is already absent or its weight is less than
+ * @weightpct, does nothing. As with hash_ring_add(), a non-zero @weightpct
+ * will always round up to at least one entry in the ring.
  *
  * Like add(), takes an auxiliary buf and returns a new size if this one isn't
  * big enough. The passed buf is always freed. On success, returns zero.
  */
-size_t	hash_ring_remove(struct hash_ring *h, uint32_t member, void *aux,
-			 size_t sz);
+size_t	hash_ring_remove(struct hash_ring *h, uint32_t member,
+			 unsigned weightpct, void *aux, size_t sz);
 
 /*
  * Gets @n (1 or more) replicas from the hash_ring @h appropriate for key
@@ -119,9 +122,6 @@ struct hash_ring {
 	/* In units of struct hr_kv_pair: */
 	size_t			 hr_ring_used;
 	size_t			 hr_ring_capacity;
-
-	/* No. of members of this ring */
-	uint32_t		 hr_count;
 
 	/* No. of replicas per member in map */
 	uint32_t		 hr_nreplicas;

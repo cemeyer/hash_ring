@@ -9,7 +9,7 @@ hashring.o: hashring.c hashring.h
 	$(CC) $(CFLAGS) -c $<
 
 T_DEPS = hashring.o MurmurHash3.o siphash24.o isi_hash.o
-T_OBJS = t_bias.o t_biased.o t_hashring.o $(T_DEPS)
+T_OBJS = t_bias.o t_hashring.o t_weights.o $(T_DEPS)
 T_HDRS = t_bias.h siphash24.h hashring.h isi_hash.h MurmurHash3.h
 
 run_tests: $(T_OBJS) $(T_HDRS)

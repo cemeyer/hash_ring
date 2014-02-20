@@ -28,15 +28,18 @@
 fail_if(hash_ring_add(r, m, 100/*weight*/, malloc(NBYTES), NBYTES))
 
 #define hash_ring_remove(r, m) \
-fail_if(hash_ring_remove(r, m, malloc(NBYTES), NBYTES))
+fail_if(hash_ring_remove(r, m, 0/*weight*/, malloc(NBYTES), NBYTES))
 
+#define silence_hash_ring_dump 1
+#define skip_noisy_tests 1
+
+#if !silence_hash_ring_dump
 static void
 _hash_ring_dump(struct hash_ring *h)
 {
 
 	printf("%p -> {\n", h);
 	printf("\thash_fn: %p\n", h->hr_hash_fn);
-	printf("\tcount: %"PRIu32"\n", h->hr_count);
 	printf("\treplicas: %"PRIu32"\n", h->hr_nreplicas);
 	printf("\tring:\n");
 	for (size_t i = 0; i < h->hr_ring_used; i++)
@@ -44,6 +47,7 @@ _hash_ring_dump(struct hash_ring *h)
 		    h->hr_ring[i].kv_hash, h->hr_ring[i].kv_value);
 	printf("\tring capacity: %zu\n", h->hr_ring_capacity);
 }
+#endif
 
 #define hasher md5_hasher
 
@@ -63,10 +67,10 @@ START_TEST(basic_additions)
 
 	hash_ring_init(&ring, hasher, 5);
 
-	hash_ring_add(&ring, 0xdeadbeef);
+	hash_ring_add(&ring, 0xdeadbf);
 	hash_ring_add(&ring, 0xc0ffee);
 
-	fail_unless(ring.hr_count == 2);
+	fail_unless(ring.hr_ring_used == 10);
 	hash_ring_clean(&ring);
 }
 END_TEST
@@ -77,20 +81,20 @@ START_TEST(basic_removes)
 
 	hash_ring_init(&ring, hasher, 128);
 
-	hash_ring_add(&ring, 0x124dbeef);
-	hash_ring_add(&ring, 0x0ff426ee);
-	hash_ring_add(&ring, 0x2349620e);
+	hash_ring_add(&ring, 0x124dbe);
+	hash_ring_add(&ring, 0x0ff426);
+	hash_ring_add(&ring, 0x234962);
 
-	fail_unless(ring.hr_count == 3);
+	fail_unless(ring.hr_ring_used == 3*128);
 
-	hash_ring_remove(&ring, 0x2349620e);
-	fail_unless(ring.hr_count == 2);
+	hash_ring_remove(&ring, 0x234962);
+	fail_unless(ring.hr_ring_used == 2*128);
 
-	hash_ring_remove(&ring, 0x124dbeef);
-	fail_unless(ring.hr_count == 1);
+	hash_ring_remove(&ring, 0x124dbe);
+	fail_unless(ring.hr_ring_used == 128);
 
-	hash_ring_remove(&ring, 0x0ff426ee);
-	fail_unless(ring.hr_count == 0);
+	hash_ring_remove(&ring, 0x0ff426);
+	fail_unless(ring.hr_ring_used == 0);
 
 	hash_ring_clean(&ring);
 }
@@ -106,6 +110,7 @@ static const uint32_t characters[] = {
 	0x77700000,
 };
 
+#if !skip_noisy_tests
 START_TEST(example_plain)
 {
 	struct hash_ring ring;
@@ -116,7 +121,7 @@ START_TEST(example_plain)
 	hash_ring_add(&ring, 0xBBBB);
 	hash_ring_add(&ring, 0xCCCC);
 
-#if 0
+#if !silence_hash_ring_dump
 	_hash_ring_dump(&ring);
 #endif
 
@@ -255,6 +260,7 @@ START_TEST(example_remove)
 	hash_ring_clean(&ring);
 }
 END_TEST
+#endif /* !skip_noisy_tests */
 
 static void
 ring_is_sorted(struct hash_ring *ring)
@@ -274,14 +280,14 @@ START_TEST(func_add)
 
 	hash_ring_init(&ring, hasher, 128);
 
-	hash_ring_add(&ring, 0xABCDEF0);
+	hash_ring_add(&ring, 0xABCDEF);
 
 	fail_unless(ring.hr_ring_used == ring.hr_nreplicas);
 	fail_if(ring.hr_ring == NULL);
 
 	ring_is_sorted(&ring);
 
-	hash_ring_add(&ring, 0x1C0FED0);
+	hash_ring_add(&ring, 0x1C0FED);
 
 	/* This can fail in unlikely event of a collision: */
 	fail_unless(ring.hr_ring_used == 2*ring.hr_nreplicas);
@@ -298,8 +304,8 @@ START_TEST(func_remove)
 
 	hash_ring_init(&ring, hasher, 128);
 
-	hash_ring_add(&ring, 0xABCDEF0);
-	hash_ring_remove(&ring, 0xABCDEF0);
+	hash_ring_add(&ring, 0xABCDEF);
+	hash_ring_remove(&ring, 0xABCDEF);
 
 	fail_unless(ring.hr_ring_used == 0);
 	hash_ring_clean(&ring);
@@ -312,8 +318,8 @@ START_TEST(func_remove_nonexist)
 
 	hash_ring_init(&ring, hasher, 128);
 
-	hash_ring_add(&ring, 0xABCDEF0);
-	hash_ring_remove(&ring, 0xFEDCBAF0);
+	hash_ring_add(&ring, 0xABCDEF);
+	hash_ring_remove(&ring, 0xFEDCBA);
 
 	fail_unless(ring.hr_ring_used == ring.hr_nreplicas);
 	fail_if(ring.hr_ring == NULL);
@@ -342,8 +348,13 @@ fill_lotsa_inputs(void)
 	FILE *f;
 
 	f = fopen("/dev/urandom", "rb");
-	for (unsigned i = 0; i < NELEM(_lotsa_inputs); i++)
-		fread(&_lotsa_inputs[i], 4, 1, f);
+	for (unsigned i = 0; i < NELEM(_lotsa_inputs); i++) {
+		size_t rd;
+
+		rd = fread(&_lotsa_inputs[i], 4, 1, f);
+		if (rd != 1)
+			abort();
+	}
 
 	fclose(f);
 }
@@ -356,7 +367,7 @@ for (uint32_t *_INP = _lotsa_inputs; _INP != &_lotsa_inputs[NELEM(_lotsa_inputs)
 START_TEST(func_getsingle)
 {
 	struct hash_ring ring;
-	const uint32_t the_bin = 0xABCDEF0;
+	const uint32_t the_bin = 0xABCDEF;
 
 	hash_ring_init(&ring, hasher, 128);
 
@@ -380,9 +391,9 @@ END_TEST
 START_TEST(func_get_multiple)
 {
 	struct hash_ring ring;
-	const uint32_t bin1 = 0xABCDEF00,
-	      bin2 = 0xDEFC0FEE,
-	      bin3 = 0x8000F000;
+	const uint32_t bin1 = 0xABCDEF,
+	      bin2 = 0xDC0FEE,
+	      bin3 = 0x80F000;
 	uint32_t bin;
 	int err;
 
@@ -396,19 +407,19 @@ START_TEST(func_get_multiple)
 	hash_ring_add(&ring, bin2);
 	hash_ring_add(&ring, bin3);
 
-#if 0
+#if !silence_hash_ring_dump
 	_hash_ring_dump(&ring);
 #endif
 
 	err = hash_ring_getn(&ring, 0xbcfdda1d, 1, &bin);
 	fail_if(err);
-	fail_if(bin != bin1, "#1 got bin: %08x", bin);
+	fail_if(bin != bin2, "#1 got bin: %08x", bin);
 
 	err = hash_ring_getn(&ring, 0x5, 1, &bin);
 	fail_if(err);
-	fail_if(bin != bin2, "#2 got bin: %08x", bin);
+	fail_if(bin != bin1, "#2 got bin: %08x", bin);
 
-	err = hash_ring_getn(&ring, 0x12f9578, 1, &bin);
+	err = hash_ring_getn(&ring, 0xefffffff, 1, &bin);
 	fail_if(err);
 	fail_if(bin != bin3, "#3 got bin: %08x", bin);
 	hash_ring_clean(&ring);
@@ -418,9 +429,9 @@ END_TEST
 START_TEST(func_get_multiple_quick)
 {
 	struct hash_ring ring;
-	const uint32_t bin1 = 0xABCDEF00,
-	      bin2 = 0xDEFC0FEE,
-	      bin3 = 0x8000F000;
+	const uint32_t bin1 = 0xABCDEF,
+	      bin2 = 0xDC0FEE,
+	      bin3 = 0x80F000;
 	uint32_t bin;
 	int err;
 
@@ -442,9 +453,9 @@ END_TEST
 START_TEST(func_get_multiple_remove)
 {
 	struct hash_ring ring;
-	const uint32_t bin1 = 0xABCDEF00,
-	      bin2 = 0xDEFC0FEE,
-	      bin3 = 0x8000F000;
+	const uint32_t bin1 = 0xABCDEF,
+	      bin2 = 0xDC0FEE,
+	      bin3 = 0x80F000;
 	uint32_t bin;
 	int err;
 
@@ -460,31 +471,31 @@ START_TEST(func_get_multiple_remove)
 
 	err = hash_ring_getn(&ring, 0xbcfdda1d, 1, &bin);
 	fail_if(err);
-	fail_if(bin != bin1, "#1 got bin: %08x", bin);
+	fail_if(bin != bin2, "#1 got bin: %08x", bin);
 
 	err = hash_ring_getn(&ring, 0x5, 1, &bin);
 	fail_if(err);
-	fail_if(bin != bin2, "#2 got bin: %08x", bin);
+	fail_if(bin != bin1, "#2 got bin: %08x", bin);
 
 	err = hash_ring_getn(&ring, 0x12f9578, 1, &bin);
 	fail_if(err);
-	fail_if(bin != bin3, "#3 got bin: %08x", bin);
+	fail_if(bin != bin1, "#3 got bin: %08x", bin);
 
 	/* remove one */
-	hash_ring_remove(&ring, bin2);
+	hash_ring_remove(&ring, bin1);
 
 	err = hash_ring_getn(&ring, 0xbcfdda1d, 1, &bin);
 	fail_if(err);
-	fail_if(bin != bin1, "#4 got bin: %08x", bin);
+	fail_if(bin != bin2, "#4 got bin: %08x", bin);
 
 	/* no longer hashes to removed bin */
 	err = hash_ring_getn(&ring, 0x5, 1, &bin);
 	fail_if(err);
-	fail_if(bin != bin1, "#5 got bin: %08x", bin);
+	fail_if(bin != bin2, "#5 got bin: %08x", bin);
 
 	err = hash_ring_getn(&ring, 0x12f9578, 1, &bin);
 	fail_if(err);
-	fail_if(bin != bin3, "#6 got bin: %08x", bin);
+	fail_if(bin != bin2, "#6 got bin: %08x", bin);
 	hash_ring_clean(&ring);
 }
 END_TEST
@@ -492,9 +503,9 @@ END_TEST
 START_TEST(func_get_multiple_remove_quick)
 {
 	struct hash_ring ring;
-	const uint32_t bin1 = 0xABCDEF00,
-	      bin2 = 0xDEFC0FEE,
-	      bin3 = 0x8000F000;
+	const uint32_t bin1 = 0xABCDEF,
+	      bin2 = 0xDC0FEE,
+	      bin3 = 0x80F000;
 
 	hash_ring_init(&ring, hasher, 128);
 
@@ -520,9 +531,9 @@ END_TEST
 START_TEST(func_get_two)
 {
 	struct hash_ring ring;
-	const uint32_t bin1 = 0xABCDEF00,
-	      bin2 = 0xDEFC0FEE,
-	      bin3 = 0x8000F000;
+	const uint32_t bin1 = 0xABCDEF,
+	      bin2 = 0xDC0FEE,
+	      bin3 = 0x80F000;
 
 	hash_ring_init(&ring, md5_hasher, 128);
 
@@ -537,8 +548,8 @@ START_TEST(func_get_two)
 	fail_if(err);
 	fail_if(bins[0] == bins[1]);
 	/* only going to work for a particular hash function... */
-	fail_if(bins[0] != bin1, "1 0x%08x", bins[0]);
-	fail_if(bins[1] != bin2, "2 0x%08x", bins[1]);
+	fail_if(bins[0] != bin2, "1 0x%08x", bins[0]);
+	fail_if(bins[1] != bin1, "2 0x%08x", bins[1]);
 	hash_ring_clean(&ring);
 }
 END_TEST
@@ -546,9 +557,9 @@ END_TEST
 START_TEST(func_get_two_quick)
 {
 	struct hash_ring ring;
-	const uint32_t bin1 = 0xABCDEF00,
-	      bin2 = 0xDEFC0FEE,
-	      bin3 = 0x8000F000;
+	const uint32_t bin1 = 0xABCDEF,
+	      bin2 = 0xDC0FEE,
+	      bin3 = 0x80F000;
 	uint32_t bins[2];
 	int err;
 
@@ -572,8 +583,8 @@ END_TEST
 START_TEST(func_get_two_quick2)
 {
 	struct hash_ring ring;
-	const uint32_t bin1 = 0xABCDEF00,
-	      bin2 = 0xDEFC0FEE;
+	const uint32_t bin1 = 0xABCDEF,
+	      bin2 = 0xDC0FEE;
 	uint32_t bins[2];
 	int err;
 
@@ -600,7 +611,7 @@ START_TEST(err_get_two_with_one_in_ring)
 	uint32_t bin;
 
 	hash_ring_init(&ring, hasher, 128);
-	hash_ring_add(&ring, 0xABCDEF00);
+	hash_ring_add(&ring, 0xABCDEF);
 
 	err = hash_ring_getn(&ring, 0x0, 2, &bin);
 	fail_unless(err == ENOENT);
@@ -697,8 +708,14 @@ START_TEST(distribution)
 	double *dist;
 
 	f = fopen("/dev/urandom", "rb");
-	for (unsigned i = 0; i < NELEM(bins); i++)
-		fread(&bins[i], 4, 1, f);
+	for (unsigned i = 0; i < NELEM(bins); i++) {
+		size_t rd;
+
+		rd = fread(&bins[i], 4, 1, f);
+		fail_unless(rd == 1);
+
+		bins[i] &= (1<<24) - 1;
+	}
 	fclose(f);
 
 	dist = malloc(sizeof(double) * NELEM(bins) * NELEM(comparison_functions) * NELEM(comparison_replicas));
@@ -776,20 +793,20 @@ START_TEST(err_idempotent)
 
 	hash_ring_init(&ring, isi_hasher64, 64);
 
-	fail_unless(ring.hr_count == 0);
-	hash_ring_add(&ring, 0x12345678);
-	fail_unless(ring.hr_count == 1);
+	fail_unless(ring.hr_ring_used == 0);
+	hash_ring_add(&ring, 0x123456);
+	fail_unless(ring.hr_ring_used == 64);
 
 	/* adding the same item? don't count it */
-	hash_ring_add(&ring, 0x12345678);
-	fail_unless(ring.hr_count == 1);
+	hash_ring_add(&ring, 0x123456);
+	fail_unless(ring.hr_ring_used == 64);
 
-	hash_ring_remove(&ring, 0x12345678);
-	fail_unless(ring.hr_count == 0);
+	hash_ring_remove(&ring, 0x123456);
+	fail_unless(ring.hr_ring_used == 0);
 
 	/* removing the same item also works. */
-	hash_ring_remove(&ring, 0x12345678);
-	fail_unless(ring.hr_count == 0);
+	hash_ring_remove(&ring, 0x123456);
+	fail_unless(ring.hr_ring_used == 0);
 
 	hash_ring_clean(&ring);
 }
@@ -863,7 +880,7 @@ main(void)
 	tcase_add_test(t, basic_removes);
 	suite_add_tcase(s, t);
 
-#if 0
+#if !skip_noisy_tests
 	t = tcase_create("useless_printfs");
 	tcase_add_test(t, example_plain);
 	tcase_add_test(t, example_adds);
@@ -898,7 +915,7 @@ main(void)
 	suite_add_tcase(s, t);
 
 	suite_add_t_bias(s);
-	suite_add_t_biased(s);
+	suite_add_t_weights(s);
 
 	SRunner *sr = srunner_create(s);
 	srunner_run_all(sr, CK_VERBOSE);
