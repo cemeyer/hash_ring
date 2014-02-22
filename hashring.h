@@ -87,7 +87,7 @@ size_t	hash_ring_remove(struct hash_ring *h, uint32_t member,
  * ENOENT - If the request is unsatisfiable (for example, because fewer members
  *          exist)
  */
-int	hash_ring_getn(struct hash_ring *h, uint32_t hash, unsigned n,
+int	hash_ring_getn(const struct hash_ring *h, uint32_t hash, unsigned n,
 		       uint32_t *memb_out);
 
 /*
@@ -101,6 +101,9 @@ int	hash_ring_getn(struct hash_ring *h, uint32_t hash, unsigned n,
  */
 size_t	hash_ring_copy(struct hash_ring *dst, struct hash_ring *src, void *m,
 		       size_t sz);
+
+/* Swaps two hash_ring objects. */
+void hash_ring_swap(struct hash_ring *h1, struct hash_ring *h2);
 
 /*
  * ===============================================================

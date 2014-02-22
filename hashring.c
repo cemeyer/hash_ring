@@ -227,7 +227,7 @@ hash_ring_remove(struct hash_ring *h, uint32_t member, unsigned weightpct,
 }
 
 int
-hash_ring_getn(struct hash_ring *h, uint32_t hash, unsigned n,
+hash_ring_getn(const struct hash_ring *h, uint32_t hash, unsigned n,
     uint32_t *memb_out)
 {
 	int error = EINVAL;
@@ -333,6 +333,16 @@ hash_ring_copy(struct hash_ring *dst, struct hash_ring *src, void *m, size_t sz)
 	}
 
 	return 0;
+}
+
+void
+hash_ring_swap(struct hash_ring *h1, struct hash_ring *h2)
+{
+	struct hash_ring t;
+
+	memcpy(&t, h1, sizeof t);
+	memcpy(h1, h2, sizeof *h1);
+	memcpy(h2, &t, sizeof *h2);
 }
 
 
